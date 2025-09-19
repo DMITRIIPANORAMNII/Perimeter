@@ -1,4 +1,6 @@
 #include "StdAfx.h"
+#include "NetConnection.h"
+#include "NetComEventBuffer.h"
 #include "Universe.h"
 #include "MusicManager.h"
 #include "LogicUpdater.h"
@@ -35,6 +37,8 @@ void LogicUpdater::exchange() {
 
 void LogicUpdater::checkEvent(const Event* event) {
 	switch (event->type()) {
+        default:
+            break;
 		case Event::COMPLETE_BUILDING:
 			{
 				const EventUnitPlayer* eventUnit = safe_cast<const EventUnitPlayer*>(event);

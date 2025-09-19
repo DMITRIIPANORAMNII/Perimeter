@@ -4,8 +4,8 @@
 #include "Runtime.h"
 #include "CameraManager.h"
 #include "terra.h"
-#include "../HT/ht.h"
 #include "GameShell.h"
+#include "../HT/ht.h"
 
 LogStream fout("lst",XS_OUT);
 
@@ -16,6 +16,43 @@ sColor4c BLUE(0, 0, 255);
 sColor4c YELLOW(255, 255, 0);
 sColor4c MAGENTA(255, 0, 255);
 sColor4c CYAN(0, 255, 255);
+
+RandomGenerator logicRND(12345678, true);
+
+int logicRNDi_internal(int x, const char* file, int line) {
+    MTL();
+#ifdef NET_LOG_EXHAUSTIVE
+    std::string filename = std::filesystem::u8path(file).filename().u8string();
+    log_var(filename);
+    log_var(line);
+    log_var(logicRND.get());
+    log_var(x);
+#endif
+    return logicRND(x);
+}
+
+float logicRNDf_internal(const char* file, int line) {
+    MTL();
+#ifdef NET_LOG_EXHAUSTIVE
+    std::string filename = std::filesystem::u8path(file).filename().u8string();
+    log_var(filename);
+    log_var(line);
+    log_var(logicRND.get());
+#endif
+    return logicRND.frnd();
+}
+
+float logicRNDfa_internal(const char* file, int line) {
+    MTL();
+#ifdef NET_LOG_EXHAUSTIVE
+    std::string filename = std::filesystem::u8path(file).filename().u8string();
+    log_var(filename);
+	log_var(line);
+	log_var(logicRND.get());
+#endif
+    return logicRND.frand();
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////
 //		Converter
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -107,26 +144,29 @@ void ShowDispatcher::Shape::show()
 {
 	switch(type){
 		case Point: {
-			Vect3f vs = G2S(point);
-			if(vs.z > 10)
-				clip_pixel(vs.xi(), vs.yi(), color, 1);
-			} break;
+			Vect3f vs = G2S(points[0]);
+			if(vs.z > 10) {
+                clip_pixel(vs.xi(), vs.yi(), color, 1);
+            }
+            break;
+        }
 
 		case Text: {
-			Vect3f vs = G2S(point);
-			terRenderDevice->OutText(vs.xi(), vs.yi(), text, sColor4f(color));
-			} break;
+			Vect3f vs = G2S(points[0]);
+			terRenderDevice->OutText(vs.xi(), vs.yi(), text.c_str(), sColor4f(color));
+            break;
+        }
 
 		case Circle: 
-			clip_circle_3D(point, radius, color);
+			clip_circle_3D(points[0], radius, color);
 			break;
 
 		case Delta: 
-			clip_line_3D(point1, point1 + point2*show_vector_scale, color);
+			clip_line_3D(points[0], points[0] + points[1] * show_vector_scale, color);
 			break;
 
 		case Line: 
-			clip_line_3D(point1, point2, color);
+			clip_line_3D(points[0], points[1], color);
 			break;
 
 		case Triangle: 
@@ -154,19 +194,30 @@ void ShowDispatcher::Shape::show()
 
 void ShowDispatcher::draw()
 {
-	cFont* font = 0;
+	cFont* font = nullptr;
 	if(need_font){
 		font = terVisGeneric->CreateDebugFont();
 		terRenderDevice->SetFont(font);
 		need_font = false;
 	}
-
-	List::iterator i;
-	FOR_EACH(shapes, i)
-		i -> show();
+    
+    bool paused = gameShell->isPaused();
+    unsigned int time = gameShell->gameTimer();
+    auto i_shape = shapes.begin();
+    while(i_shape != shapes.end()){
+        if (i_shape->rendered_at == 0) {
+            i_shape->rendered_at = time;
+        } else if (paused || i_shape->rendered_at < time) {
+            //From older logic quant, discard
+            i_shape = shapes.erase(i_shape);
+            continue;
+        }
+        i_shape->show();
+        ++i_shape;
+    }
 
 	if(font){
-		terRenderDevice->SetFont(0);
+		terRenderDevice->SetFont(nullptr);
 		font->Release();
 	}
 }
@@ -192,11 +243,11 @@ void add_watch(const char* var, const char* value)
 
 void show_watch()
 {
-	std::ostrstream text;
+	XBuffer text = XBuffer(128, true);
 	WatchMap::iterator i;
 	FOR_EACH(watch_map, i)
-		text << i -> first.c_str() << ": " << i -> second.c_str() << std::endl;
-	text << '\0';
+		text < i -> first.c_str() < ": " < i -> second.c_str() < '\n';
+	text < '\0';
     SDL_ShowCursor(SDL_TRUE);
 //	show_debug_window(text.str(), debug_window_sx, debug_window_sy);
 	RestoreFocus();
@@ -263,9 +314,12 @@ void check_determinacy_quant(bool start)
 			recorder_logging.write((const char*)log_buffer, log_buffer.tell());
 			}
 		else{
-			static char* buf = (char*)malloc(buffer_size);
-			if(buffer_size < log_buffer.tell())
-				buf = (char*)realloc(buf, buffer_size = log_buffer.tell());
+			static char* buf = static_cast<char*>(malloc(buffer_size));
+			if (buffer_size < log_buffer.tell()) {
+                buffer_size = log_buffer.tell();
+                free(buf);
+                buf = static_cast<char*>(malloc(buffer_size));
+            }
 			int len = recorder_logging.read(buf, log_buffer.tell());
 			if(memcmp(buf, (const char*)log_buffer, len)){
 				XStream f0("lst0", XS_OUT);

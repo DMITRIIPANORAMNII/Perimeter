@@ -41,21 +41,21 @@ void cInterfaceRenderDevice::DrawSprite(int x1, int y1, int dx, int dy, float u1
     db->Unlock();
 }
 
-void cInterfaceRenderDevice::DrawSprite2(int x, int y, int dx, int dy, float u, float v, float du, float dv,
+void cInterfaceRenderDevice::DrawSprite3(int x, int y, int dx, int dy, float u, float v, float du, float dv,
                                          cTexture *Tex1, cTexture *Tex2, const sColor4c &ColorMul, float phase)
 {
-    DrawSprite2(x, y, dx, dy,
+    DrawSprite3(x, y, dx, dy,
                 u, v, du, dv,
                 u, v, du, dv,
                 Tex1, Tex2, ColorMul, phase,
                 COLOR_MOD, ALPHA_NONE);
 }
 
-void cInterfaceRenderDevice::DrawSprite2(int x1,int y1,int dx,int dy,
-                                         float u0,float v0,float du0,float dv0,
-                                         float u1,float v1,float du1,float dv1,
-                                         cTexture *Tex1,cTexture *Tex2,const sColor4c &ColorMul,float phase,
-                                         eColorMode mode,eBlendMode blend_mode) {
+void cInterfaceRenderDevice::DrawSprite3(int x1, int y1, int dx, int dy,
+                                         float u0, float v0, float du0, float dv0,
+                                         float u1, float v1, float du1, float dv1,
+                                         cTexture *Tex1, cTexture *Tex2, const sColor4c &ColorMul, float phase,
+                                         eColorMode mode, eBlendMode blend_mode) {
     if (!Tex1||!Tex2) return;
 
     int x2=x1+dx,y2=y1+dy;
@@ -156,7 +156,7 @@ void cInterfaceRenderDevice::OutText(int x,int y,const char *string,const sColor
 
     indices_t* i = nullptr;
     sVertexXYZDT1* v = nullptr;
-    auto db = GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLES);
+    auto db = GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLES, 10 * 4 * 10);
     for (const char* str = string; 0 != *str; str++, yOfs += ySize) {
         xOfs = static_cast<float>(x);
         size_t chars;
@@ -202,6 +202,8 @@ void cInterfaceRenderDevice::OutText(int x,int y,const char *string,const sColor
         VISASSERT(0 && "Font not set");
         return;
     }
+    int x_min, y_min, x_max, y_max;
+    GetClipRect(&x_min, &y_min, &x_max, &y_max);
 
     duv.x *= 1024.0f / static_cast<float>(GetSizeX());
     duv.y *= 768.0f / static_cast<float>(GetSizeY());
@@ -218,8 +220,23 @@ void cInterfaceRenderDevice::OutText(int x,int y,const char *string,const sColor
 
     indices_t* i = nullptr;
     sVertexXYZDT2* v = nullptr;
-    auto db = GetDrawBuffer(sVertexXYZDT2::fmt, PT_TRIANGLES);
-    for (const char* str=string; 0 != *str; str++, yOfs += ySize) {
+    auto db = GetDrawBuffer(sVertexXYZDT2::fmt, PT_TRIANGLES, 10 * 4 * 10);
+    for (const char* str=string; 0 != *str; str++) {
+        if ((yOfs + ySize) < y_min) {
+            yOfs += ySize;
+            //This line won't be visible, skip to next
+            for (; *str!=10; str++) {
+                ChangeTextColor(str, diffuse);
+                uint8_t c = *str;
+                if (!c || c == 10) break;
+                if (c < 32) continue;
+            }
+            continue;
+        }
+        if (yOfs > y_max) {
+            //Reached out of bounds, terminate
+            break;
+        }
         xOfs = static_cast<float>(x);
         size_t chars;
         float StringWidth = GetFontLength(str, &chars);
@@ -234,13 +251,20 @@ void cInterfaceRenderDevice::OutText(int x,int y,const char *string,const sColor
 
             Vect3f& size = cf->Font[c];
 
-            db->AutoLockQuad<sVertexXYZDT2>(std::min(chars, static_cast<size_t>(10)), 1, v, i);
-
             float x0, x1, y0, y1;
             x0 = xOfs;
             x1 = xOfs + xSize * size.z - 1;
             y0 = yOfs;
             y1 = yOfs + ySize;
+            xOfs = x1;
+
+            if (x1 < x_min || x0 > x_max) {
+                //Char is not visible as is before left edge or after right edge
+                continue;
+            }
+
+            db->AutoLockQuad<sVertexXYZDT2>(std::min(chars, static_cast<size_t>(10)), 1, v, i);
+
             v[1].x = v[3].x = x0;
             v[1].y = v[0].y = y0;
             v[2].x = v[0].x = x1;
@@ -258,18 +282,18 @@ void cInterfaceRenderDevice::OutText(int x,int y,const char *string,const sColor
             v[1].v1() = v[0].v1() = (y0 - y) * duv.y + uv.y;
             v[2].u1() = v[0].u1() = (x1 - x) * duv.x + uv.x;
             v[2].v1() = v[3].v1() = (y1 - y) * duv.y + uv.y;
-
-            xOfs = x1;
         }
         db->AutoUnlock();
         if (*str == 0) break;
+        yOfs += ySize;
     }
+    db->AutoUnlock();
 }
 
 // 2D primitives
 
 float cInterfaceRenderDevice::getThinLineWidth() const {
-    return static_cast<float>(ScreenSize.y * (1.0 / 768.0) / 2.0);
+    return static_cast<float>(max(600, ScreenSize.y) * (1.0 / 600.0) / 2.0);
 }
 
 void cInterfaceRenderDevice::DrawLine(int x1,int y1,int x2,int y2,const sColor4c& color, float width) {    
@@ -475,32 +499,25 @@ void cInterfaceRenderDevice::FlushPrimitive2D() {
 
 // 3D primitives
 
-void cInterfaceRenderDevice::DrawBound(const MatXf &Matrix, const Vect3f &min, const Vect3f &max, bool wireframe, const sColor4c &Color) {
+void cInterfaceRenderDevice::DrawBound(const Vect3f &min, const Vect3f &max, const sColor4c &diffuse) {
     VISASSERT(DrawNode);
     
-    uint32_t zwrite = GetRenderState(RS_ZWRITEENABLE);
-    SetRenderState(RS_ZWRITEENABLE, 1);
-    if (wireframe && !WireframeMode) SetRenderState(RS_WIREFRAME, 1);
-    SetWorldMatXf(Matrix);
-    SetNoMaterial(ALPHA_BLEND);
-
-    uint32_t diffuse = ConvertColor(sColor4c((150*Color.r)>>8,(155*Color.g)>>8,(155*Color.b)>>8,100));
     DrawBuffer* db = GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLES);
     sPolygon* p = nullptr;
     sVertexXYZDT1* v = nullptr;
     db->Lock(8, 12*sPolygon::PN, v, reinterpret_cast<indices_t*&>(p), true);
     
-    v[0].pos.set(min.x,min.y,min.z);
-    v[1].pos.set(max.x,min.y,min.z);
-    v[2].pos.set(min.x,max.y,min.z);
-    v[3].pos.set(max.x,max.y,min.z);
-    v[4].pos.set(min.x,min.y,max.z);
-    v[5].pos.set(max.x,min.y,max.z);
-    v[6].pos.set(min.x,max.y,max.z);
-    v[7].pos.set(max.x,max.y,max.z);
+    v[0].setPos(min.x,min.y,min.z);
+    v[1].setPos(max.x,min.y,min.z);
+    v[2].setPos(min.x,max.y,min.z);
+    v[3].setPos(max.x,max.y,min.z);
+    v[4].setPos(min.x,min.y,max.z);
+    v[5].setPos(max.x,min.y,max.z);
+    v[6].setPos(min.x,max.y,max.z);
+    v[7].setPos(max.x,max.y,max.z);
     v[0].diffuse=v[1].diffuse=v[2].diffuse=
     v[3].diffuse=v[4].diffuse=v[5].diffuse=
-    v[6].diffuse=v[7].diffuse=diffuse;
+    v[6].diffuse=v[7].diffuse=ConvertColor(diffuse);
     p[0].p1=1, p[0].p2=2, p[0].p3=0;
     p[1].p1=1, p[1].p2=3, p[1].p3=2;
     p[2].p1=4, p[2].p2=6, p[2].p3=5;
@@ -515,7 +532,17 @@ void cInterfaceRenderDevice::DrawBound(const MatXf &Matrix, const Vect3f &min, c
     p[11].p1=2, p[11].p2=7, p[11].p3=6;
     
     db->Unlock();
-    db->Draw();
+}
+
+void cInterfaceRenderDevice::DrawBound(const MatXf &Matrix, const Vect3f &min, const Vect3f &max, bool wireframe, const sColor4c& diffuse) {
+    uint32_t zwrite = GetRenderState(RS_ZWRITEENABLE);
+    SetRenderState(RS_ZWRITEENABLE, 1);
+    bool WireframeMode = GetRenderState(RS_WIREFRAME);
+    if (wireframe && !WireframeMode) SetRenderState(RS_WIREFRAME, 1);
+    SetWorldMatXf(Matrix);
+    SetNoMaterial(ALPHA_BLEND);
+
+    DrawBound(min, max, sColor4c((150*diffuse.r)>>8,(155*diffuse.g)>>8,(155*diffuse.b)>>8,100));
 
     if (wireframe) SetRenderState(RS_WIREFRAME, WireframeMode);
     SetRenderState(RS_ZWRITEENABLE, zwrite);
@@ -579,7 +606,7 @@ void cInterfaceRenderDevice::FlushPrimitive3D() {
 
 // Other render functions
 
-void cInterfaceRenderDevice::Draw(class cScene *Scene) {
+void cInterfaceRenderDevice::DrawScene(class cScene *Scene) {
     std::map<cTexture*, std::vector<cUnkLight*>> lightsByTex;
     for(int i=0;i<Scene->GetNumberLight();i++) {
         cUnkLight* ULight=Scene->GetLight(i);
@@ -594,7 +621,7 @@ void cInterfaceRenderDevice::Draw(class cScene *Scene) {
         return;
     }
 
-    DrawBuffer* db = GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLES);
+    DrawBuffer* db = GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLES, 50 * 4 * 20);
 
     for (auto& pair : lightsByTex) {
         SetNoMaterial(ALPHA_ADDBLEND, 0, pair.first);
@@ -608,10 +635,10 @@ void cInterfaceRenderDevice::Draw(class cScene *Scene) {
             db->AutoLockQuad(locked, 1, v, ib);
             Vect3f& p=ULight->GetPos();
             float r=ULight->GetRadius();
-            v[0].pos.x=p.x-r; v[0].pos.y=p.y-r; v[0].pos.z=p.z; v[0].u1()=0; v[0].v1()=0;
-            v[1].pos.x=p.x-r; v[1].pos.y=p.y+r; v[1].pos.z=p.z; v[1].u1()=0; v[1].v1()=1;
-            v[2].pos.x=p.x+r; v[2].pos.y=p.y-r; v[2].pos.z=p.z; v[2].u1()=1; v[2].v1()=0;
-            v[3].pos.x=p.x+r; v[3].pos.y=p.y+r; v[3].pos.z=p.z; v[3].u1()=1; v[3].v1()=1;
+            v[0].x=p.x-r; v[0].y=p.y-r; v[0].z=p.z; v[0].u1()=0; v[0].v1()=0;
+            v[1].x=p.x-r; v[1].y=p.y+r; v[1].z=p.z; v[1].u1()=0; v[1].v1()=1;
+            v[2].x=p.x+r; v[2].y=p.y-r; v[2].z=p.z; v[2].u1()=1; v[2].v1()=0;
+            v[3].x=p.x+r; v[3].y=p.y+r; v[3].z=p.z; v[3].u1()=1; v[3].v1()=1;
 
             v[0].diffuse=v[1].diffuse=v[2].diffuse=v[3].diffuse=ConvertColor(Diffuse);
         }
@@ -619,7 +646,7 @@ void cInterfaceRenderDevice::Draw(class cScene *Scene) {
     db->AutoUnlock();
 }
 
-void cInterfaceRenderDevice::Draw(ElasticSphere *es) {
+void cInterfaceRenderDevice::DrawElasticSphere(ElasticSphere *es) {
     SetWorldMatXf(es->GetGlobalMatrix());
     
     int is = es->theta_size;
@@ -633,7 +660,7 @@ void cInterfaceRenderDevice::Draw(ElasticSphere *es) {
     int cull=GetRenderState(RS_CULLMODE);
     SetRenderState(RS_CULLMODE,CULL_CW);
 
-    DrawBuffer* db = GetDrawBuffer(sVertexXYZDT2::fmt, PT_TRIANGLESTRIP);
+    DrawBuffer* db = GetDrawBuffer(sVertexXYZDT2::fmt, PT_TRIANGLESTRIP, points);
     indices_t* ib = nullptr;
     sVertexXYZDT2* vb = nullptr;
     db->Lock(points, points, vb, ib, false);
@@ -647,7 +674,7 @@ void cInterfaceRenderDevice::Draw(ElasticSphere *es) {
     int i;
     for (i=0; i<=is; i++) {
         const Vect3f &n=es->normal(0,i);
-        vb->pos=es->point(0,i);
+        es->point(0,i).write(vb->pos);
         vb->GetTexel().set(static_cast<float>(0) / static_cast<float>(es->psi_size),
                           static_cast<float>(i) / static_cast<float>(es->theta_size));
         vb->GetTexel2().set(n.y*0.5f+0.5f, n.z*0.5f+dv);
@@ -663,7 +690,7 @@ void cInterfaceRenderDevice::Draw(ElasticSphere *es) {
         for (i = 0; i <= is; i++) {
             int isi = j & 1 ? (is - i) : i;
             const Vect3f& n = es->normal(j + 1, isi);
-            vb->pos = es->point(j + 1, isi);
+            es->point(j + 1, isi).write(vb->pos);
             vb->GetTexel().set(static_cast<float>(j + 1) / static_cast<float>(es->psi_size),
                                static_cast<float>(isi) / static_cast<float>(es->theta_size));
             vb->GetTexel2().set(n.y * 0.5f + 0.5f, n.z * 0.5f + dv);
@@ -696,3 +723,23 @@ void cInterfaceRenderDevice::Draw(ElasticSphere *es) {
 
     SetRenderState(RS_CULLMODE,cull);
 }
+
+bool cInterfaceRenderDevice::CreateShadowTexture(int xysize) {
+    return false;
+}
+
+void cInterfaceRenderDevice::DeleteShadowTexture() {
+}
+
+cTexture* cInterfaceRenderDevice::GetShadowMap() {
+    return nullptr;
+}
+
+cTexture* cInterfaceRenderDevice::GetLightMap() {
+    return nullptr;
+}
+
+#ifdef PERIMETER_DEBUG
+void cInterfaceRenderDevice::StartCaptureFrame() {
+}
+#endif

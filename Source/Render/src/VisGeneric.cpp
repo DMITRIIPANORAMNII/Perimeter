@@ -8,6 +8,7 @@
 #include "Font.h"
 #include "Localization.h"
 #include "SystemUtil.h"
+#include "../../HT/mt_config.h"
 
 static void get_string(char*& str,char* s)
 {
@@ -50,7 +51,6 @@ DebugType<float>	Option_MapLevel(0.8f);
 DebugType<int>		Option_ShowRenderTextureDBG(0);
 DebugType<int>		Option_DebugShowShadowVolume(0);
 DebugType<int>		Option_ShadowType(false);
-DebugType<int>		Option_FavoriteLoadDDS(false);
 bool				Option_IsShadowMap=false;
 DebugType<int>		Option_EnableBump(true);
 DebugType<int>		Option_EnableLinkEffectToModel(true);
@@ -81,11 +81,11 @@ void MT_SET_TYPE(uint32_t val) {
 }
 
 bool MT_IS_GRAPH() {
-    return (tls_thread_type & MT_GRAPH_THREAD) != 0;
+    return !MTConfig::multithreading() || (tls_thread_type & MT_GRAPH_THREAD) != 0;
 }
 
 bool MT_IS_LOGIC() {
-    return (tls_thread_type & MT_LOGIC_THREAD) != 0;
+    return !MTConfig::multithreading() || (tls_thread_type & MT_LOGIC_THREAD) != 0;
 }
 
 float CONVERT_PROCENT(float x,float min,float max)
@@ -140,7 +140,6 @@ cVisGeneric::cVisGeneric() : cUnknownClass(KIND_UI_VISGENERIC)//: SceneArray(KIN
 		RDI(ShowRenderTextureDBG);
 		RDI(DebugShowShadowVolume);
 		RDI(ShadowType);
-		RDI(FavoriteLoadDDS);
 		RDI(EnableOcclusion);
 		RDI(EnablePointLight);
 		RDI(ShadowMapSelf4x4);
@@ -235,11 +234,6 @@ void cVisGeneric::SetDebugShowShadowVolume(int p)
 	Option_DebugShowShadowVolume=p;
 }
 
-void cVisGeneric::SetFavoriteLoadDDS(bool p)
-{
-	Option_FavoriteLoadDDS=p;
-}
-
 void cVisGeneric::SetShadowType(eShadowType p,int shadow_size)
 {
 	Option_ShadowType=p;
@@ -247,8 +241,9 @@ void cVisGeneric::SetShadowType(eShadowType p,int shadow_size)
 	CalcIsShadowMap();
 
 #ifdef PERIMETER_D3D9
-	if(gb_RenderDevice3D)
+	if (gb_RenderDevice3D) {
 		gb_RenderDevice3D->SetAdvance();
+	}
 #endif
 }
 
@@ -706,7 +701,7 @@ cFont* cVisGeneric::CreateGameFont(const char* TextureFileName, int height, bool
 	if(TextureFileName==nullptr||TextureFileName[0]==0) return nullptr;
     
     if (locale.empty()) {
-        locale = getLocale();
+        locale = getDefaultFontLocale();
     }
 
 	std::vector<cFontInternal*>::iterator it;
@@ -763,7 +758,9 @@ void cVisGeneric::SetShadowHint(int hint)
 {
 	Option_ShadowHint=hint;
 #ifdef PERIMETER_D3D9
-	gb_RenderDevice3D->RestoreShader();
+	if (gb_RenderDevice3D) {
+		gb_RenderDevice3D->RestoreShader();
+	}
 #endif
 }
 

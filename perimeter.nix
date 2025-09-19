@@ -25,13 +25,13 @@
     ref = "master";
   } else {
     url = "https://github.com/doitsujin/dxvk.git";
-    rev = "80e075406b1b7d9d2508c9dc05e9745b3d3cf7e2";
+    rev = "2b1a284f8453baa2bd193709b67e5183074c74ba";
     ref = "master";
     submodules = true; 
   });
   sokol_git = builtins.fetchGit {
     url = https://github.com/floooh/sokol;
-    rev = "c0e54485457b2e1645f2d809394753b53bf50cd4";
+    rev = "7f7cd64c6d9d1d4ed08d88a3879b1d69841bf0a4";
     ref = "master";
   };
   gamemath_git = builtins.fetchGit {
@@ -51,7 +51,7 @@
   };
 in pkgs.stdenv.mkDerivation {
   pname = "perimeter";
-  version = "3.0.11";
+  version = "3.1.10";
   meta = with lib; {
     homepage = "https://github.com/KD-lab-Open-Source/Perimeter/";
     description = "Perimeter - A open-source RTS game from 2004 by K-D LAB";
@@ -75,6 +75,7 @@ in pkgs.stdenv.mkDerivation {
   # Build / Runtime dependencies
   buildInputs = with (if flag_static then pkgs.pkgsStatic else pkgs); [
     zlib
+    libbacktrace
     boost
     ffmpeg
     SDL2
@@ -119,13 +120,12 @@ in pkgs.stdenv.mkDerivation {
   
   buildPhase = ''
     cd build
-    ninja dependencies
     ninja
   '';
   
   installPhase = (lib.optionalString flag_dxvk ''
     mkdir -p $out/lib
-    cp Source/dxvk-prefix/src/dxvk-build/src/d3d9/libdxvk_d3d9.so $out/lib;
+    cp dxvk-prefix/src/dxvk-build/src/d3d9/libdxvk_d3d9.so $out/lib;
   '') + ''
     strip -g -x Source/perimeter
     mkdir -p $out/bin

@@ -2,12 +2,9 @@
 #include <climits>
 #include "tweaks.h"
 
-#ifdef PERIMETER_D3D9
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-#include <windows.h>
-#endif
-
-#include "StdAfx.h"
+#include "StdAfxTriggerEditor.h"
+#include "EditArchive.h"
+#include "BinaryArchive.h"
 #include "XPrmArchive.h"
 #include "codepages/codepages.h"
 #include "TriggerExport.h"

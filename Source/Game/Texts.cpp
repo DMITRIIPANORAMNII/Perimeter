@@ -1,10 +1,57 @@
 #include <vector>
 #include "StdAfx.h"
 #include "xutl.h"
+#include "UnitAttribute.h"
 #include "GameContent.h"
 #include "qd_textdb.h"
 
-const char* CREDITS_PERIMETER_RUSSIAN = R"(ПЕРИМЕТР
+#ifdef GPX
+constexpr const char* CREDITS_HEADER_RUS = R"(
+
+&FFFFBBПосвящено памяти
+Андрея "КранК" Кузьмина
+1971 - 2022
+
+
+&66CCFFGamePix
+gamepix.com&FFFFFF
+
+&CCCCFFВеб версия&FFFFFF
+Александр "caiiiycuk" Гурьянов
+Станислав "sta3ik" Павлов
+
+
+&66CCFFК-Д ЛАБ
+kdlab.com&FFFFFF
+
+Андрей "КранК" Кузьмин
+)";
+//END CREDITS_HEADER_RUS
+
+constexpr const char* CREDITS_HEADER_ENG = R"(
+
+&FFFFBBDedicated to the memory of
+Andrey "KranK" Kuzmin
+1971 - 2022
+
+
+&66CCFFGamePix
+gamepix.com&FFFFFF
+
+&CCCCFFWeb Version&FFFFFF
+Alexander "caiiiycuk" Guryanov
+Stanislav "sta3ik" Pavlov
+
+&66CCFFK-D LAB
+kdlab.com&FFFFFF
+
+Andrey "KranK" Kuzmin
+)";
+//END CREDITS_HEADER_ENG
+
+#else
+
+constexpr const char* CREDITS_HEADER_RUS = R"(
 &66CCFFК-Д ЛАБ
 kdlab.com&FFFFFF
 
@@ -12,11 +59,26 @@ kdlab.com&FFFFFF
 &FFFFBBПосвящено памяти
 Андрея "КранК" Кузьмина
 1971 - 2022
+)"; //END CREDITS_HEADER_RUS
+
+constexpr const char* CREDITS_HEADER_ENG = R"(
+&66CCFFK-D LAB
+kdlab.com&FFFFFF
+
+
+&FFFFBBDedicated to the memory of
+Andrey "KranK" Kuzmin
+1971 - 2022
+)"; //END CREDITS_HEADER_ENG
+#endif
+
+constexpr const char* CREDITS_PERIMETER_TITLE_RUSSIAN = "ПЕРИМЕТР";
+constexpr const char* CREDITS_PERIMETER_RUSSIAN = R"(
 &CCCCFFПродюсер&FFFFFF
 Игровая концепция и вселенная,
 сценарий
 
-Юлия "Ylitka" Шапошникова
+Юлия "Ylitka" Новикова (Шапошникова)
 &CCCCFFГлавный гейм-дизайнер&FFFFFF
 Дизайн миссий, AI
 
@@ -106,7 +168,7 @@ kdlab.com&FFFFFF
 Программный продукт для PC
 "Периметр" разработан
 компанией "К-Д ЛАБ".
-Все права защищены. (C) 2023
+Все права защищены. (C) 2024
 
 Все права на вселенную "Периметра"
 принадлежат компании "К-Д ЛАБ".
@@ -116,22 +178,16 @@ kdlab.com&FFFFFF
 принадлежат компании "К-Д ЛАБ".
 
 Ogg Vorbis (tm) Xiph.Org
-Copyright (C) 1994-2023 Xiph.Org
+Copyright (C) 1994-2024 Xiph.Org
 
 )"; //END CREDITS_PERIMETER_RUSSIAN
 
-const char* CREDITS_PERIMETER_ET_RUSSIAN = R"(ПЕРИМЕТР: Завет Императора
-&66CCFFК-Д ЛАБ
-kdlab.com&FFFFFF
-
-
-&FFFFBBПосвящено памяти
-Андрея "КранК" Кузьмина
-1971 - 2022
+constexpr const char* CREDITS_PERIMETER_ET_TITLE_RUSSIAN = "ПЕРИМЕТР: Завет Императора";
+constexpr const char* CREDITS_PERIMETER_ET_RUSSIAN = R"(
 &CCCCFFКонцепт-дизайнер&FFFFFF
 Игровая концепция и вселенная
 
-Юлия "Ylitka" Шапошникова
+Юлия "Ylitka" Новикова (Шапошникова)
 &CCCCFFИсполнительный продюсер &FFFFFF
 Гейм-дизайн, дизайн миссий, AI
 
@@ -231,7 +287,7 @@ kdlab.com&FFFFFF
 Программный продукт для PC
 "Периметр: Завет Императора"
 разработан компанией "К-Д ЛАБ".
-Все права защищены. (C) 2023
+Все права защищены. (C) 2024
 
 Все права на вселенную
 "Периметр: Завет Императора"
@@ -242,7 +298,7 @@ kdlab.com&FFFFFF
 принадлежат компании "К-Д ЛАБ".
 
 Ogg Vorbis (tm) Xiph.Org
-Copyright (C) 1994-2023 Xiph.Org
+Copyright (C) 1994-2024 Xiph.Org
 
 )"; //END CREDITS_PERIMETER_ET_RUSSIAN
 
@@ -308,6 +364,11 @@ Pete in his Jeep
 Тестирование,
 создание мода "True English Compaign"
 
+Александр "@!!ex" Басов
+Широкоэкранный патч
+Инструменты сообщества
+Реверс-инжиниринг игровых форматов данных
+
 &9966FFАссоциация KD-Lab&FFFFFF
 Менеджмент, маркетинг
 Юлия "Ylitka" Новикова
@@ -321,20 +382,18 @@ August
 ViHtor
 shikoist
 
-&9966FFСпециальные благодарности&FFFFFF
-Александр "@!!ex" Басов
-
-
-Сторонних библиотек
+&9966FFСторонних библиотек&FFFFFF
 SDL2
-SDL2_mixer
 SDL2_image
 SDL2_net
-sokol_gfx
-DXVK Native
+SDL2_mixer
+zlib
 FFmpeg
 Boost
-zlib
+DXVK Native
+sokol_gfx
+pevents
+simpleini
 
 
 &99EE66И ОГРОМНОЕ СПАСИБО
@@ -348,19 +407,13 @@ github.com/KD-lab-Open-Source
 
 )"; //END CREDITS_COMMON_RUSSIAN
 
-const char* CREDITS_PERIMETER_ENGLISH = R"(PERIMETER
-&66CCFFK-D LAB
-kdlab.com&FFFFFF
-
-
-&FFFFBBDedicated to the memory of
-Andrey "KranK" Kuzmin
-1971 - 2022
+constexpr const char* CREDITS_PERIMETER_TITLE_ENGLISH = "PERIMETER";
+constexpr const char* CREDITS_PERIMETER_ENGLISH = R"(
 &CCCCFFProducer&FFFFFF
 Game Concept, Game Universe,
 Scenarios
 
-Yulia "Ylitka" Shaposhnikova
+Yulia "Ylitka" Novikova (Shaposhnikova)
 &CCCCFFLead Game Designer&FFFFFF
 Missions, AI
 
@@ -445,7 +498,7 @@ Igor Vasilenko
 The software product for PC
 "Perimeter" was developed by
 the "K-D LAB" company.
-All rights reserved. (C) 2023
+All rights reserved. (C) 2024
 
 All rights to the "Perimeter" universe
 belong to the "K-D LAB" company.
@@ -454,22 +507,16 @@ All rights to the music used in the
 game belong to the "K-D LAB" company.
 
 Ogg Vorbis (tm) Xiph.Org.
-Copyright (C) 1994-2023 Xiph.Org.
+Copyright (C) 1994-2024 Xiph.Org.
 
 )"; //END CREDITS_PERIMETER_ENGLISH
 
-const char* CREDITS_PERIMETER_ET_ENGLISH = R"(PERIMETER: Emperor's Testament
-&66CCFFK-D LAB
-kdlab.com&FFFFFF
-
-
-&FFFFBBDedicated to the memory of
-Andrey "KranK" Kuzmin
-1971 - 2022
+constexpr const char* CREDITS_PERIMETER_ET_TITLE_ENGLISH = "PERIMETER: Emperor's Testament";
+constexpr const char* CREDITS_PERIMETER_ET_ENGLISH = R"(
 &CCCCFFConcept-designer&FFFFFF
 Game concept, Game universe
 
-Yulia "Ylitka" Shaposhnikova
+Yulia "Ylitka" Novikova (Shaposhnikova)
 &CCCCFFExecutive Producer&FFFFFF
 Game Design, Missions, AI
 
@@ -564,7 +611,7 @@ Roman "Guro" Gunyavy
 The software product for PC
 "Perimeter: Emperor's Testament"
 was developed by the "K-D LAB" company.
-All rights reserved. (C) 2023
+All rights reserved. (C) 2024
 
 All rights to the 
 "Perimeter: Emperor's Testament"
@@ -574,7 +621,7 @@ All rights to the music used in the
 game belong to the "K-D LAB" company.
 
 Ogg Vorbis (tm) Xiph.Org.
-Copyright (C) 1994-2023 Xiph.Org.
+Copyright (C) 1994-2024 Xiph.Org.
 
 )"; //END CREDITS_PERIMETER_ET_ENGLISH
 
@@ -640,6 +687,11 @@ Pete in his Jeep
 Testing,
 "True English Campaign" mod creator
 
+Alexander "@!!ex" Basov
+Widescreen patch
+Community tools
+Reverse engineering of game file formats
+
 &9966FFKD-Lab Association&FFFFFF
 Management, marketing
 Yulia "Ylitka" Novikova
@@ -653,20 +705,18 @@ August
 ViHtor
 shikoist
 
-&9966FFSpecial Thanks&FFFFFF
-Alexander "@!!ex" Basov
-
-
-Third-party libraries
+&9966FFThird-party libraries&FFFFFF
 SDL2
-SDL2_mixer
 SDL2_image
 SDL2_net
-sokol_gfx
-DXVK Native
+SDL2_mixer
+zlib
 FFmpeg
 Boost
-zlib
+DXVK Native
+sokol_gfx
+pevents
+simpleini
 
 &99EE66AND THANK YOU SO MUCH
 FOR YOUR SUPPORT!
@@ -690,10 +740,27 @@ void qdTextDB::load_replacement_texts(const std::string& locale) {
     //Credits
     std::string credits = "Interface.Credits=";
     bool russian = startsWith(locale, "russian");
-    if (terGameContentSelect == PERIMETER_ET) {
-        credits += russian ? CREDITS_PERIMETER_ET_RUSSIAN : CREDITS_PERIMETER_ET_ENGLISH;
+    if (russian) {
+        if (terGameContentSelect == PERIMETER_ET) {
+            credits += CREDITS_PERIMETER_ET_TITLE_RUSSIAN;
+            credits += CREDITS_HEADER_RUS;
+            credits += CREDITS_PERIMETER_ET_RUSSIAN;
+        } else {
+            credits += CREDITS_PERIMETER_TITLE_RUSSIAN;
+            credits += CREDITS_HEADER_RUS;
+            credits += CREDITS_PERIMETER_RUSSIAN;
+        }
     } else {
-        credits += russian ? CREDITS_PERIMETER_RUSSIAN : CREDITS_PERIMETER_ENGLISH;
+        if (terGameContentSelect == PERIMETER_ET) {
+            credits += CREDITS_PERIMETER_ET_TITLE_ENGLISH;
+            credits += CREDITS_HEADER_ENG;
+            credits += CREDITS_PERIMETER_ET_ENGLISH;
+        } else {
+            credits += CREDITS_PERIMETER_TITLE_ENGLISH;
+            credits += CREDITS_HEADER_ENG;
+            credits += CREDITS_PERIMETER_ENGLISH;
+        }
+
     }
     credits += russian ? CREDITS_COMMON_RUSSIAN : CREDITS_COMMON_ENGLISH;
     load_lines({credits}, true, locale);
@@ -705,14 +772,67 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
         load_lines({
            "GAME_CONTENT.PERIMETER=Периметр",
            "GAME_CONTENT.PERIMETER_ET=Периметр: Завет Императора",
+           "Controls.Input.NoInputSet=Не назначено",
+           "Controls.Input.MouseLeftButton=Левая кнопка мыши",
+           "Controls.Input.MouseRightButton=Правая кнопка мыши",
+           "Controls.Input.MouseMiddleButton=Средняя кнопка мыши",
+           "Controls.Input.MouseButton4=Кнопка мыши 4",
+           "Controls.Input.MouseButton5=Кнопка мыши 5",
+           "Controls.CTRL_TIME_NORMAL=Обычная скорость",
+           "Controls.CTRL_TIME_DEC=Уменьшить скорость",
+           "Controls.CTRL_TIME_INC=Увеличить скорость",
+           "Controls.CTRL_CAMERA_MOVE_UP=Переместить камеру вверх",
+           "Controls.CTRL_CAMERA_MOVE_DOWN=Переместить камеру вниз",
+           "Controls.CTRL_CAMERA_MOVE_LEFT=Переместить камеру влево",
+           "Controls.CTRL_CAMERA_MOVE_RIGHT=Переместить камеру вправо",
+           "Controls.CTRL_CAMERA_ROTATE_UP=Повернуть камеру вверх",
+           "Controls.CTRL_CAMERA_ROTATE_DOWN=Повернуть камеру вниз",
+           "Controls.CTRL_CAMERA_ROTATE_LEFT=Повернуть камеру влево",
+           "Controls.CTRL_CAMERA_ROTATE_RIGHT=Повернуть камеру вправо",
+           "Controls.CTRL_CAMERA_ZOOM_INC=Уменьшить масштаб камеры",
+           "Controls.CTRL_CAMERA_ZOOM_DEC=Увеличить масштаб камеры",
+           "Controls.CTRL_CAMERA_MOUSE_LOOK=Вращение камеры мышью",
+           "Controls.CTRL_CAMERA_MOUSE_MOVE=Перемещение камеры мышью",
+           "Controls.CTRL_ESCAPE=Выйти",
+           "Controls.CTRL_CAMERA_SAVE1=Сохранить камеру 1",
+           "Controls.CTRL_CAMERA_SAVE2=Сохранить камеру 2",
+           "Controls.CTRL_CAMERA_SAVE3=Сохранить камеру 3",
+           "Controls.CTRL_CAMERA_SAVE4=Сохранить камеру 4",
+           "Controls.CTRL_CAMERA_SAVE5=Сохранить камеру 5",
+           "Controls.CTRL_CAMERA_RESTORE1=Восстановить камеру 1",
+           "Controls.CTRL_CAMERA_RESTORE2=Восстановить камеру 2",
+           "Controls.CTRL_CAMERA_RESTORE3=Восстановить камеру 3",
+           "Controls.CTRL_CAMERA_RESTORE4=Восстановить камеру 4",
+           "Controls.CTRL_CAMERA_RESTORE5=Восстановить камеру 5",
+           "Controls.CTRL_CAMERA_TO_EVENT=Камера на событие",
+           "Controls.CTRL_LOAD=Загрузить игру",
+           "Controls.CTRL_SAVE=Сохранить игру",
+           "Controls.CTRL_HOLD_PRODUCTION=Приостановить производство",
+           "Controls.CTRL_TOGGLE_LIFEBARS=Переключить индикаторы здоровья",
+           "Controls.CTRL_RESUME_PRODUCTION=Возобновить производство",
+           "Controls.CTRL_TOGGLE_FPS=Показать/Скрыть FPS",
+           "Interface.Menu.Mods.MetadataVersion=Версия:",
+           "Interface.Menu.Mods.MetadataAuthors=Авторы:",
+           "Interface.Menu.Mods.MetadataDescription=Описание:",
+           "Interface.Menu.Mods.MetadataSite=Сайт:",
+           "Interface.Menu.Mods.MetadataLicense=Лицензия",
+           "Interface.Menu.Mods.Errors=Ошибки:",
+           "Interface.Menu.Mods.ErrorMissingAttribute=Отсутствует атрибут в mod.ini:",
+           "Interface.Menu.Mods.ErrorGameTooOld=Игра слишком старая, нужна версия:",
+           "Interface.Menu.Mods.ErrorMissingModInfo=Отсутствует mod.ini",
+           "Interface.Menu.Mods.ErrorDuplicateContent=Содержимое уже загружено",
+           "Interface.Menu.Mods.ErrorRequiredContentMissing=Мод требует контента, который не установлен",
+           "Interface.Menu.Mods.ErrorRequiredContentDisabled=Мод требует отключенного контента",
+           "Interface.Menu.Mods.ErrorDisallowedContentEnabled=Мод несовместим с активным в данный момент контентом",
            "Interface.Menu.Messages.ReplayGameVersionDifferent=Этот повтор был сохранен в другой версии и может отображаться неправильно. Использованная версия игры:",
            "Interface.Menu.Messages.GameContentMissing=Содержит ресурсы, которые не представлены или не включены в этой копии игры, убедитесь, что они установлены и включены:\n",
            "Interface.Menu.Messages.GameContentSwitch=Содержит неактивные ресурсы. Переключите кампанию на следующую:",
            "Interface.Menu.Messages.WorldMissing=Содержит карту, которая не представлена или не включена в этой копии игры, убедитесь, что она установлена и включена:\n\n",
+           "Interface.Menu.Messages.PressNewControlInput=Нажмите кнопку или сочетание для:",
            "Interface.Menu.ButtonLabels.MULTIPLAYER=МУЛЬТИПЛЕЕР",
            "Interface.Menu.ButtonLabels.MODS=МОДЫ",
            "Interface.Menu.ButtonLabels.COMMUNITY=КОМЬЮНИТИ",
-           "Interface.Menu.ButtonLabels.KD LAB=КД ЛАБ",
+           "Interface.Menu.ButtonLabels.K-D LAB=К-Д ЛАБ",
            "Interface.Menu.ButtonLabels.ASSOCIATION=АССОЦИАЦИЯ",
            "Interface.Menu.ButtonLabels.SOCIAL MEDIA=СОЦИАЛЬНЫЕ СЕТИ",
            "Interface.Menu.ButtonLabels.SOURCE CODE=ИСХОДНЫЙ КОД",
@@ -731,6 +851,12 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
            "Interface.Menu.ButtonLabels.FOG=ТУМАН",
            "Interface.Menu.ButtonLabels.Network=Сеть",
            "Interface.Menu.ButtonLabels.GUIDE=РУКОВОДСТВО",
+           "Interface.Menu.ButtonLabels.VSYNC=ВЕРТИКАЛЬНАЯ СИНХРОНИЗАЦИЯ",
+           "Interface.Menu.ButtonLabels.VOICE VOLUME=ГРОМКОСТЬ ГОЛОСА",
+           "Interface.Menu.ButtonLabels.SPEECH VOLUME=ГРОМКОСТЬ ГОЛОСА БРИФИНГОВ И ЗАДАНИЙ",
+           "Interface.Menu.ButtonLabels.CONTROLS=УПРАВЛЕНИЕ",
+           "Interface.Menu.ButtonLabels.CHANGE=ИЗМЕНИТЬ",
+           "Interface.Menu.ButtonLabels.RESTORE=ВОССТАНОВИТЬ",
            "Interface.Menu.ComboItems.Centered=По центру",
            "Interface.Menu.ComboItems.Left side=Левая сторона",
            "Interface.Menu.ComboItems.Right side=Правая сторона",
@@ -743,12 +869,24 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
            "Interface.Menu.ComboItems.Classic=Классический",
            "Interface.Menu.Multiplayer.StartNewGame=Начать новую игру",
            "Interface.Menu.Multiplayer.Server=сервер",
+           "Interface.Tips.Multiplayer.HasPassword=Имеет пароль",
+           "Interface.Tips.Multiplayer.GameStarted=Игра уже началась",
+           "Interface.Tips.Multiplayer.Game=Игра",
+           "Interface.Tips.Multiplayer.Map=Карта",
+           "Interface.Tips.Multiplayer.CurrentPlayers=Текущие игроки",
+           "Interface.Tips.Multiplayer.Ping=Пинг",
+           "Interface.Menu.Multiplayer.NoRelayAvailable=Не удаётся получить список открытых игр.\nВозможно, проблемы с сетью или сервером",
+           "Interface.Menu.Multiplayer.NoGameRunning=На данный момент нет доступных игр для\nприсоединения. Вы можете создать новую\nигру, чтобы играть с другими игроками",
+           "Interface.Tips.PopupUnitDerived=\n&00FFFFПравая кнопка мыши&FFFFFF заказ базовых роботов\nдля одной единицы, с &00FFFFShift&FFFFFF для пяти единиц.",
            "Interface.Menu.Messages.WrongIPPort=Этот IP-адрес недоступен",
            "Interface.Menu.Messages.Multiplayer.IncorrectContent=Сервер содержит другие игровые ресурсы",
            "Interface.Menu.Messages.Multiplayer.IncorrectArch=Сервер имеет другую битность или архитектуру ЦПУ, другой тип билда (Debug/Release), операционную систему или использован другой компилятор (MSVC/Clang/GCC), пожалуйста, убедитесь, что они совпадают",
            "Interface.Menu.Messages.Multiplayer.SignatureError=Проверка подписи или CRC не прошла, соединение может быть ненадёжным",
            "Interface.Menu.Messages.Multiplayer.HostTerminated=Хост прекратил игру или отключился",
            "Interface.Menu.Messages.Multiplayer.StartingGame=Игра начинается...",
+           "Interface.Menu.Messages.Multiplayer.ChatTipClan=Нажмите &00FFFFInsert&FFFFFF чтобы написать игрокам из своего клана, &00FFFFControl + Insert&FFFFFF или &00FFFFControl + Space&FFFFFF чтобы написать всем игрокам.",
+           "Interface.Menu.Messages.Multiplayer.ChatTip=Нажмите &00FFFFInsert&FFFFFF, &00FFFFControl + Insert&FFFFFF или &00FFFFControl + Space&FFFFFF чтобы написать всем игрокам.",
+           "Interface.Menu.Messages.Multiplayer.Kicked=Вас кикнули.",
            "Interface.Menu.Messages.Confirmations.PendingChanges=Отложенные изменения не будут применены, вернуться в главное меню?",
            "Interface.Menu.Messages.Confirmations.ApplyChangesRestart=Чтобы применить изменения, требуется перезапуск игры, вы уверены?",
            "Interface.Menu.Messages.Confirmations.OpenWeb=Открыть сайт?",
@@ -760,14 +898,67 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
         load_lines({
            "GAME_CONTENT.PERIMETER=Perimeter",
            "GAME_CONTENT.PERIMETER_ET=Perimeter: Emperor's Testament",
+           "Controls.Input.NoInputSet=No input set",
+           "Controls.Input.MouseLeftButton=Left mouse button",
+           "Controls.Input.MouseRightButton=Right mouse button",
+           "Controls.Input.MouseMiddleButton=Middle mouse button",
+           "Controls.Input.MouseButton4=Mouse button 4",
+           "Controls.Input.MouseButton5=Mouse button 5",
+           "Controls.CTRL_TIME_NORMAL=Normal speed",
+           "Controls.CTRL_TIME_DEC=Decrease speed",
+           "Controls.CTRL_TIME_INC=Increase speed",
+           "Controls.CTRL_CAMERA_MOVE_UP=Move camera up",
+           "Controls.CTRL_CAMERA_MOVE_DOWN=Move camera down",
+           "Controls.CTRL_CAMERA_MOVE_LEFT=Move camera left",
+           "Controls.CTRL_CAMERA_MOVE_RIGHT=Move camera right",
+           "Controls.CTRL_CAMERA_ROTATE_UP=Rotate camera up",
+           "Controls.CTRL_CAMERA_ROTATE_DOWN=Rotate camera down",
+           "Controls.CTRL_CAMERA_ROTATE_LEFT=Rotate camera left",
+           "Controls.CTRL_CAMERA_ROTATE_RIGHT=Rotate camera right",
+           "Controls.CTRL_CAMERA_ZOOM_INC=Decrease camera zoom",
+           "Controls.CTRL_CAMERA_ZOOM_DEC=Increase camera zoom",
+           "Controls.CTRL_CAMERA_MOUSE_LOOK=Mouse camera rotation",
+           "Controls.CTRL_CAMERA_MOUSE_MOVE=Mouse camera moving",
+           "Controls.CTRL_ESCAPE=Quit",
+           "Controls.CTRL_CAMERA_SAVE1=Save camera 1",
+           "Controls.CTRL_CAMERA_SAVE2=Save camera 2",
+           "Controls.CTRL_CAMERA_SAVE3=Save camera 3",
+           "Controls.CTRL_CAMERA_SAVE4=Save camera 4",
+           "Controls.CTRL_CAMERA_SAVE5=Save camera 5",
+           "Controls.CTRL_CAMERA_RESTORE1=Restore camera 1",
+           "Controls.CTRL_CAMERA_RESTORE2=Restore camera 2",
+           "Controls.CTRL_CAMERA_RESTORE3=Restore camera 3",
+           "Controls.CTRL_CAMERA_RESTORE4=Restore camera 4",
+           "Controls.CTRL_CAMERA_RESTORE5=Restore camera 5",
+           "Controls.CTRL_CAMERA_TO_EVENT=Camera to event",
+           "Controls.CTRL_LOAD=Load game",
+           "Controls.CTRL_SAVE=Save game",
+           "Controls.CTRL_HOLD_PRODUCTION=Hold production",
+           "Controls.CTRL_TOGGLE_LIFEBARS=Toggle healthbars",
+           "Controls.CTRL_RESUME_PRODUCTION=Resume production",
+           "Controls.CTRL_TOGGLE_FPS=Show/Hide FPS",
+           "Interface.Menu.Mods.MetadataVersion=Version:",
+           "Interface.Menu.Mods.MetadataAuthors=Authors:",
+           "Interface.Menu.Mods.MetadataDescription=Description:",
+           "Interface.Menu.Mods.MetadataSite=Site:",
+           "Interface.Menu.Mods.MetadataLicense=License",
+           "Interface.Menu.Mods.Errors=Errors:",
+           "Interface.Menu.Mods.ErrorMissingAttribute=Missing attribute in mod.ini:",
+           "Interface.Menu.Mods.ErrorGameTooOld=Game is too old, needs version:",
+           "Interface.Menu.Mods.ErrorMissingModInfo=Missing mod.ini",
+           "Interface.Menu.Mods.ErrorDuplicateContent=Content is already loaded",
+           "Interface.Menu.Mods.ErrorRequiredContentMissing=Mod requires content that is not installed",
+           "Interface.Menu.Mods.ErrorRequiredContentDisabled=Mod requires content that is disabled",
+           "Interface.Menu.Mods.ErrorDisallowedContentEnabled=Mod is not compatible with currently enabled content",
            "Interface.Menu.Messages.ReplayGameVersionDifferent=This replay was saved with a different version and may not display correctly, used game version:",
            "Interface.Menu.Messages.GameContentMissing=Contains game content that is not present or enabled in your installation, make sure these are installed and enabled in your game:\n",
            "Interface.Menu.Messages.GameContentSwitch=Contains game content that is not selected, please change the campaign to the following content:\n",
            "Interface.Menu.Messages.WorldMissing=This contains a map/world that is not present or enabled in your installation, make sure that is installed and enabled in your game:\n\n",
+           "Interface.Menu.Messages.PressNewControlInput=Press new input binding for:",
            "Interface.Menu.ButtonLabels.MULTIPLAYER=MULTIPLAYER",
            "Interface.Menu.ButtonLabels.MODS=MODS",
            "Interface.Menu.ButtonLabels.COMMUNITY=COMMUNITY",
-           "Interface.Menu.ButtonLabels.KD LAB=KD LAB",
+           "Interface.Menu.ButtonLabels.K-D LAB=K-D LAB",
            "Interface.Menu.ButtonLabels.ASSOCIATION=ASSOCIATION",
            "Interface.Menu.ButtonLabels.SOCIAL MEDIA=SOCIAL MEDIA",
            "Interface.Menu.ButtonLabels.SOURCE CODE=SOURCE CODE",
@@ -786,6 +977,12 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
            "Interface.Menu.ButtonLabels.FOG=FOG",
            "Interface.Menu.ButtonLabels.Network=Network",
            "Interface.Menu.ButtonLabels.GUIDE=GUIDE",
+           "Interface.Menu.ButtonLabels.VSYNC=VERTICAL SYNC",
+           "Interface.Menu.ButtonLabels.VOICE VOLUME=VOICE VOLUME",
+           "Interface.Menu.ButtonLabels.SPEECH VOLUME=VOICE VOLUME OF BRIEFINGS AND TASKS",
+           "Interface.Menu.ButtonLabels.CONTROLS=CONTROLS",
+           "Interface.Menu.ButtonLabels.CHANGE=CHANGE",
+           "Interface.Menu.ButtonLabels.RESTORE=RESTORE",
            "Interface.Menu.ComboItems.Centered=Centered",
            "Interface.Menu.ComboItems.Left side=Left side",
            "Interface.Menu.ComboItems.Right side=Right side",
@@ -798,12 +995,24 @@ void qdTextDB::load_supplementary_texts(const std::string& locale) {
            "Interface.Menu.ComboItems.Classic=Classic",
            "Interface.Menu.Multiplayer.StartNewGame=Start a new game",
            "Interface.Menu.Multiplayer.Server=Server",
+           "Interface.Menu.Multiplayer.NoRelayAvailable=Public game listing couldn't be fetched.\nPossible network or server issues.",
+           "Interface.Menu.Multiplayer.NoGameRunning=There is no game to join currently.\nYou can create one to play with others.",
+           "Interface.Tips.Multiplayer.HasPassword=Has password",
+           "Interface.Tips.Multiplayer.GameStarted=Game has already started",
+           "Interface.Tips.Multiplayer.Game=Game",
+           "Interface.Tips.Multiplayer.Map=Map",
+           "Interface.Tips.Multiplayer.CurrentPlayers=Current players",
+           "Interface.Tips.Multiplayer.Ping=Ping",
+           "Interface.Tips.PopupUnitDerived=\n&00FFFFRight mouse button&FFFFFF to order basic robots\nfor one unit, with &00FFFFShift&FFFFFF for five units.",
            "Interface.Menu.Messages.WrongIPPort=IP port is wrong",
            "Interface.Menu.Messages.Multiplayer.IncorrectContent=Server has different game content",
            "Interface.Menu.Messages.Multiplayer.IncorrectArch=Server has different bits or CPU architecture, different build type (Debug/Release), Operating System or used a different compiler (MSVC/Clang/GCC), please ensure they match",
            "Interface.Menu.Messages.Multiplayer.SignatureError=Signature or CRC checks failed, connection may be unreliable",
            "Interface.Menu.Messages.Multiplayer.HostTerminated=Host has terminated session or disconnected",
            "Interface.Menu.Messages.Multiplayer.StartingGame=Starting the game...",
+           "Interface.Menu.Messages.Multiplayer.ChatTipClan=Press &00FFFFInsert&FFFFFF to chat with your clan players, &00FFFFControl + Insert&FFFFFF or &00FFFFControl + Space&FFFFFF to chat with all players.",
+           "Interface.Menu.Messages.Multiplayer.ChatTip=Press &00FFFFInsert&FFFFFF, &00FFFFControl + Insert&FFFFFF or &00FFFFControl + Space&FFFFFF to chat with all players.",
+           "Interface.Menu.Messages.Multiplayer.Kicked=You got kicked.",
            "Interface.Menu.Messages.Confirmations.PendingChanges=Pending changes will not be applied, return to main menu?",
            "Interface.Menu.Messages.Confirmations.ApplyChangesRestart=Game restart is required to apply changes, are you sure?",
            "Interface.Menu.Messages.Confirmations.OpenWeb=Open the website?",

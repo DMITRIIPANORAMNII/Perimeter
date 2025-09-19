@@ -111,10 +111,14 @@ protected:
     int swsHeight = 0;
     ///Software scaler output frame format
     AVPixelFormat swsFormat = AV_PIX_FMT_NONE;
+    ///Audio converter output channel layout
+#if (LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100))
+    AVChannelLayout swrChannelLayout = {};
+#else
+    int64_t swrChannelLayout = 0;
     ///Audio converter output channels
     int swrChannels = 0;
-    ///Audio converter output channel layout
-    int64_t swrChannelLayout = 0;
+#endif
     ///Audio converter output rate
     int swrSampleRate = 0;
     ///Audio converter output format
@@ -175,9 +179,15 @@ public:
     void clearFrames();
 
     ///Get video codec width
-    int getVideoWidth() const;
+    int getVideoCodecWidth() const;
 
     ///Get video codec height
+    int getVideoCodecHeight() const;
+
+    ///Get video output width
+    int getVideoWidth() const;
+
+    ///Get video output height
     int getVideoHeight() const;
 
     ///Get video codec bpp

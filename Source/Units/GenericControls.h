@@ -153,7 +153,7 @@ public:
 	 
 	//-----------------------------------------------------
 	int includingCluster() const { return includingCluster_; }
-	void updateIncludingCluster();
+	virtual void updateIncludingCluster();
 
 	//-----------------------------------------------------
 	virtual void setModelName(const char* name){}
@@ -233,7 +233,7 @@ public:
 	virtual bool needCrater() const { return true; }
 
 	virtual const AttributeBase* attr() const {
-		return attr_;
+		return attr_.get();
 	}
 
 	VIRTUAL_SERIALIZE(ar) {
@@ -246,6 +246,8 @@ public:
 
 protected:
 	float radius_;
+
+    int includingCluster_;
 	
 	virtual void setFieldDamage(const DamageData& damage);
 
@@ -290,8 +292,6 @@ private:
 	bool selected_;
 	bool selectedEnemy_;
 	bool marked_;
-
-	int includingCluster_;
 };
 
 typedef TypeLibrary<std::string, terUnitBase> UnitLibrary;

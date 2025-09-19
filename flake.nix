@@ -28,6 +28,7 @@
       #Systems that don't need overlay
       stableSystems = [
           "x86_64-linux"
+          "aarch64-linux"
       ];
 
       # Systems targetted for this package
@@ -153,8 +154,7 @@
             ffmpegVariant = "headless";
             
             withHeadlessDeps = false;
-            withOgg = true;
-            withVorbis = true;
+            withOpus = true;
             withZlib = true;
             withVpx = !super.stdenv.hostPlatform.isMinGW
                    && !super.stdenv.hostPlatform.isDarwin;
@@ -174,9 +174,9 @@
             
             configureFlags = attrs.configureFlags ++ [
               "--disable-everything"
-              "--enable-demuxer=rawvideo,bink,avi,matroska"
-              "--enable-decoder=rawvideo,bink,binkaudio_dct,vorbis,opus,png,vp9"
-              "--enable-parser=png,vp9"
+              "--enable-demuxer=rawvideo,bink,matroska"
+              "--enable-decoder=rawvideo,bink,binkaudio_dct,opus,vp9"
+              "--enable-parser=vp9"
               "--enable-filter=aresample,aformat"
               "--enable-protocol=file"
               "--disable-ffplay"
@@ -251,13 +251,17 @@
       );
 
       # Dev envs
-      devShells = forSystems buildSystems ({ system }: {
-        default = let
+      devShells = forSystems buildSystems ({ system }: (
+        let
           package = self.packages.${system}.default;
           pkgs = import nixpkgs { inherit system; };
-        in pkgs.mkShell {
-          buildInputs = package.buildInputs ++ package.nativeBuildInputs;
-        };
-      });
+          mkDevShell = extras: pkgs.mkShell {
+            buildInputs = package.buildInputs ++ package.nativeBuildInputs ++ extras;
+          };
+        in {
+          default = mkDevShell [];
+          clang = mkDevShell [ pkgs.clang ];
+        }
+      ));
     };
 }

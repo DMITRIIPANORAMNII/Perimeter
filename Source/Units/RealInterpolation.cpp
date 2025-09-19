@@ -1,5 +1,6 @@
 #include "StdAfx.h"
 
+#include "UnitAttribute.h"
 #include "RealInterpolation.h"
 #include "RealUnit.h"
 #include "Universe.h"
@@ -450,7 +451,7 @@ void terSoundController::update()
 	if(frequency_.fresh())
 		sound_->SetFrequency(frequency_.x1());
 
-	if(terSoundEnable){
+	if (0 < terSoundVolume) {
         /*
         if (needStart_) {
             if(!isPlaying_)
@@ -487,9 +488,9 @@ void terSoundController::update()
 			else if(isPlaying_)
 				isPlaying_ = sound_->IsPlayed();
 		}
-	}
-	else if(isPlaying_)
-		isPlaying_ = !(sound_->Stop());
+	} else if(isPlaying_) {
+        isPlaying_ = !(sound_->Stop());
+    }
 }
 
 

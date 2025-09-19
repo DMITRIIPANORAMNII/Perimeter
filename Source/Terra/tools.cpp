@@ -241,10 +241,10 @@ void DrawBWQuadrate(int r, unsigned char * bitmap, int xcenter, int ycenter, int
 
 	if(r >MAX_RADIUS_CIRCLEARR) r=MAX_RADIUS_CIRCLEARR; 
 	int j;
-	int* xx,*yy;
+	//int* xx,*yy;
 	int max = maxRad[r];
-	xx = xRad[r];
-	yy = yRad[r];
+	//xx = xRad[r];
+	//yy = yRad[r];
 	for(j = -r;j < r;j++) {
 		int x=xcenter + j; if(x<0)continue; if(x>=sizex) continue;//x=sizex-1;
 		int y=ycenter + -r; if(y<0)continue; if(y>=sizey) continue;
@@ -301,7 +301,7 @@ void S3Danalyze(int S3Dmode, int S3Dlevel, int S3DnoiseLevel, int S3DnoiseAmp, i
 				v = S3Dinverse ? -*p : *p;
 				v += S3Dlevel;
 				if(S3DnoiseLevel && S3DnoiseAmp)
-					if((int)XRnd(100) < S3DnoiseLevel) v += S3DnoiseAmp - XRnd((S3DnoiseAmp << 1) + 1);
+					if((int)terLogicRND(100) < S3DnoiseLevel) v += S3DnoiseAmp - terLogicRND((S3DnoiseAmp << 1) + 1);
 				//pv = pv0 + (xx = vMap.XCYCL(x + i));
 				xx = vMap.XCYCL(x + i);
 				switch(S3Dmode){
@@ -357,7 +357,7 @@ void sVBitMap::put(int VBMmode, int VBMlevel, int VBMnoiseLevel, int VBMnoiseAmp
 				v=VBMinverse ? -v : v;
 				v+=VBMlevel;
 				if(VBMnoiseLevel && VBMnoiseAmp){
-					if((int)XRnd(100) < VBMnoiseLevel) v += VBMnoiseAmp - XRnd((VBMnoiseAmp << 1) + 1);
+					if((int)terLogicRND(100) < VBMnoiseLevel) v += VBMnoiseAmp - terLogicRND((VBMnoiseAmp << 1) + 1);
 				}
 				switch(VBMmode){
 				case 0:
@@ -394,9 +394,10 @@ void sTerrainMetod::put(int xx, int yy, int v)
 	//v=inverse ? -v : v;
 	v+=level;
 	if(noiseLevel && noiseAmp){
-		if((int)XRnd(100) < noiseLevel) v += noiseAmp - XRnd((noiseAmp << 1) + 1);
+		if((int)terLogicRND(100) < noiseLevel) v += noiseAmp - terLogicRND((noiseAmp << 1) + 1);
 	}
 	switch(mode){
+    default:
 	case 0:
 		vv = v;
 		break;

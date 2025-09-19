@@ -5,7 +5,7 @@
 #include "NetIncludes.h"
 #include "NetComEventBuffer.h"
 #include "CommonEvents.h"
-#include "ServerList.h"
+#include "NetRelay.h"
 
 /**
  
@@ -88,6 +88,10 @@
 |               | |               | |               |
 +---------------+ +---------------+ +---------------+
 |               | |               | |               |
+| NetTransport  | | NetTransport  | |      ...      |
+|               | |               | |               |
++---------------+ +---------------+ +---------------+
+|               | |               | |               |
 |    SDL_net    | |    SDL_net    | |      ...      |
 |               | |               | |               |
 +---------------+ +---------------+ +---------------+
@@ -97,7 +101,7 @@
 +-------^-------+ +-------^-------+ +-------^-------+
         |                 |                 |
         |                 |                 |
-        |                 |                 |  <-------- TCP/IPv4
+        |                 |                 |
         |                 |                 |
         |                 |                 |
 +-------v-------+ +-------v-------+ +-------v-------+
@@ -108,6 +112,10 @@
 |               | |               |         .
 |    SDL_net    | |    SDL_net    |         .
 |               | |               |         .
++---------------+ +---------------+
+|               | |               |
+| NetTransport  | | NetTransport  |
+|               | |               |
 +---------------+ +---------------+
 |               | |               |
 | NetConnection | | NetConnection |
@@ -131,7 +139,7 @@
 extern const int PNC_DESYNC_RESTORE_ATTEMPTS;
 extern const int PNC_DESYNC_RESTORE_MODE_FULL;
 
-#ifdef PERIMETER_DEBUG
+#if defined(PERIMETER_DEBUG) || 1
 #define LogMsg(...) fprintf(stdout, __VA_ARGS__)
 #else
 #define LogMsg(...)
@@ -152,7 +160,8 @@ public:
 
 // {DF006380-BF70-4397-9A18-51133CEEE3B6}
 
-int InternalServerThread(void* lpParameter);
+int InternalServerThreadInit(void* lpParameter);
+void InternalServerThreadDeinit(HANDLE secondThread);
 
 enum e_PNCDesyncState {
     PNC_DESYNC_NONE,
@@ -202,24 +211,10 @@ struct PClientData
 
 };
 
-enum e_PPStatus{
-	PLAYER,
-	AI
-};
-struct PPlayerData
-{
-	e_PPStatus	status;
-	PClientData* player;
-
-	PPlayerData(e_PPStatus s){
-		status = s; player = 0;
-	}
-};
-
 enum e_PNCInterfaceCommands {
 	PNC_INTERFACE_COMMAND_NONE,
 	PNC_INTERFACE_COMMAND_CONNECTION_FAILED,
-	PNC_INTERFACE_COMMAND_CONNECTION_DROPPED,
+    PNC_INTERFACE_COMMAND_KICKED,
 	PNC_INTERFACE_COMMAND_INFO_PLAYER_EXIT,
 	PNC_INTERFACE_COMMAND_INFO_PLAYER_DISCONNECTED,
     PNC_INTERFACE_COMMAND_INFO_MESSAGE,
@@ -243,28 +238,27 @@ struct sPNCInterfaceCommand {
 };
 
 enum e_PNCInternalCommand{
-	PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST,
-	PNC_COMMAND__STOP_HOST_AND_ABORT_GAME_AND_START_FIND_HOST,
+    //Host modes
+    PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST,
+    PNC_COMMAND__CONNECT_RELAY_AND_CREATE_GAME_AND_STOP_FIND_HOST,
 
-	//PNCC_START_FIND_HOST,
+    //Client modes
 	PNC_COMMAND__CONNECT_2_HOST_AND_STOP_FIND_HOST,
-	PNC_COMMAND__DISCONNECT_AND_ABORT_GAME_AND_END_START_FIND_HOST,
-	PNC_COMMAND__DISCONNECT_AND_ABORT_GAME_AND_END,
+    PNC_COMMAND__CONNECT_2_RELAY_ROOM_AND_STOP_FIND_HOST,
 
 	//Client back commands
 	PNC_COMMAND__CLIENT_STARTING_LOAD_GAME,
-	PNC_COMMAND__CLIENT_STARTING_GAME,
+    PNC_COMMAND__CLIENT_GAME_IS_READY,
 
-	//Special command
+	//Special command for host migration (was used in DPlay, currently unused)
 	PNC_COMMAND__STOP_GAME_AND_ASSIGN_HOST_2_MY,
 	PNC_COMMAND__STOP_GAME_AND_WAIT_ASSIGN_OTHER_HOST,
 
 	PNC_COMMAND__END,
 	PNC_COMMAND__ABORT_PROGRAM,
-	
-	PNC_COMMAND__END_GAME,
-	PNC_COMMAND__START_FIND_HOST,
-    PNC_COMMAND__DESYNC
+
+    PNC_COMMAND__RESET,
+    PNC_COMMAND__DESYNC,
 
 };
 
@@ -273,9 +267,9 @@ enum e_PNCInternalCommand{
 enum e_PNCState{
 	PNC_STATE__NONE=0,
 
+    //Client is polling for server list
 	PNC_STATE__CLIENT_FIND_HOST=1,
 
-	PNC_STATE__CONNECTION=2,
 	PNC_STATE__CLIENT_TUNING_GAME=4,
 	PNC_STATE__CLIENT_LOADING_GAME=PNC_State_GameRun|5,
 	PNC_STATE__CLIENT_GAME=PNC_State_GameRun|6,
@@ -302,8 +296,9 @@ enum e_PNCState{
     PNC_STATE__HOST_DESYNC=PNC_State_GameRun|PNC_State_Host|18,
     PNC_STATE__HOST_SENDING_GAME=PNC_State_Host|20,
 
-	// Состояние завершения
-	PNC_STATE__ENDING_GAME=19
+	// Is resetting or staying closed
+    PNC_STATE__CLOSED=30,
+    PNC_STATE__RESETTING=31,
 };
 
 enum e_PNCStateClient{
@@ -340,12 +335,28 @@ enum e_PNCStateHost{
 	PNC_STATE_NEWHOST__WAIT_GAME_DATA=PNC_State_Host|6
 };
 
-struct InputPacket;
+enum e_ConnectResult{
+    CR_NONE,
+    CR_OK,
+    CR_ERR_INCORRECT_SIGNATURE,
+    CR_ERR_INCORRECT_ARCH,
+    CR_ERR_INCORRECT_VERSION,
+    CR_ERR_INCORRECT_CONTENT,
+    CR_ERR_INCORRECT_CONTENT_FILES,
+    CR_ERR_INCORRECT_PASWORD,
+    CR_ERR_GAME_STARTED,
+    CR_ERR_GAME_FULL
+};
+
+struct NetConnectionMessage;
 
 class PNetCenter {
 private:
-    ServerList serverList;
+    class ServerList* serverList = nullptr;
     NetConnectionHandler connectionHandler;
+    
+    arch_flags server_arch_mask = 0;
+    uint32_t server_content_crc = 0;
 
 public:
 	std::list<e_PNCInternalCommand> internalCommandList;
@@ -361,9 +372,6 @@ public:
 
 	//int m_quantPeriod;
 	size_t m_nextQuantTime;
-
-    //Use server listing to get servers or broadcast server to listing
-    bool publicServerHost;
 
 	//bool flag_missionDescriptionUpdate;
 	MissionDescription* hostMissionDescription = nullptr;
@@ -388,21 +396,12 @@ public:
 
 	void ClearCommandList();
 
-
-	///HANDLE             m_hPlayerListReady;
-	//bool m_flag_PlayerListReady;
-	//list<PPlayerData>  m_PlayerStartList;
-
-
 	PNetCenter();
 	~PNetCenter();
 
-	void DisconnectAndStartFindHost();
-	void StopServerAndStartFindHost();
-
-
 	void UpdateBattleData();
     void SendBattleData();
+    void UpdateCurrentMissionOnRelayRoom();
 	void UpdateCurrentMissionDescription4C();
 	void CheckClients();
 	void DumpClients();
@@ -439,11 +438,16 @@ public:
 	bool ExecuteInternalCommand(e_PNCInternalCommand ic, bool waitExecution);
 	bool ExecuteInterfaceCommand(e_PNCInterfaceCommands ic, std::unique_ptr<LocalizedText> text = nullptr);
 
-	void CreateGame(const NetAddress& connection, const std::string& gameName, MissionDescription* mission, const std::string& playerName, const std::string& password="");
+    bool pickBestPrimaryRelay(struct ServerListRelay* relay_out) const;
+	void CreateGame(bool isPublicGame, const NetAddress& connection,
+                    const std::string& gameName, MissionDescription* mission,
+                    const std::string& playerName, const std::string& password);
 
-	void JoinGame(const NetAddress& connection, const std::string& playerName, const std::string& password="");
+	void JoinDirectGame(const NetAddress& connection, const std::string& playerName, const std::string& password);
+    void JoinPublicRoomGame(const NetAddress& connection, NetRoomID room_id, const std::string& playerName, const std::string& password);
 
-	std::vector<GameHostInfo>& getGameHostList();
+    size_t getRelaysCount() const;
+	const std::vector<struct GameInfo>& getGameList() const;
 
 	void SendEvent(const netCommandGeneral* event);
 	void SendEventSync(const netCommandGeneral* event);
@@ -473,7 +477,10 @@ public:
 
 	HANDLE hSecondThread;
 	//Second Thread
-	bool SecondThread();
+    std::atomic_bool flag_end;
+    void SecondThreadInit();
+    bool SecondThreadLive();
+	void SecondThreadQuant();
 	void ClearClientData(){
 		ClientMapType::iterator p;
 		for(p=m_clients.begin(); p!=m_clients.end(); p++){
@@ -491,6 +498,7 @@ public:
 
 	unsigned int m_numberGameQuant; //Кванты на хосте Кванты считаются с 1-цы!
 	void HostReceiveQuant();
+    void hostProcessPlayerClientPackets(PClientData* pData);
 	void ClientPredReceiveQuant();
 
     uint64_t last_latency_status = 0;
@@ -505,14 +513,12 @@ public:
 	unsigned int TIMEOUT_DISCONNECT;
 	unsigned int MAX_TIME_PAUSE_GAME;
 
-	bool isHost(void){
-		if(m_state&PNC_State_Host) return 1;
-		else return 0;
-	}
-	bool isGameRun(void){
-		if(m_state&PNC_State_GameRun) return 1;
-		else return 0;
-	}
+    bool isHost() { return (m_state&PNC_State_Host) != 0; }
+    bool isGameRun() { return (m_state&PNC_State_GameRun) != 0; }
+    bool isTuning() { 
+        return m_state == PNC_STATE__HOST_TUNING_GAME
+            || m_state == PNC_STATE__CLIENT_TUNING_GAME;
+    }
 
     bool isSaveGame() {
         return lobbyMissionDescription.gameType_ == GT_MULTI_PLAYER_LOAD;
@@ -520,31 +526,33 @@ public:
 
     NETID	m_hostNETID;
     NETID	m_localNETID;
-    bool flag_connected;
+    bool flag_connected = false;
 
-	void FinishGame(void);
-	void StartFindHost(void);
+    void Reset();
 
 	bool Init();
-    bool ServerStart();
 	void SetConnectionTimeout(int ms);
+    void KickPlayer(NETID netid);
 	void RemovePlayer(NETID netid);
-    
-	void Close(bool flag_immediate=1);
-	bool Connect();
 
 	bool isConnected() const;
-    size_t Send(const char* buffer, size_t size, NETID destination);
+    size_t SendNetBuffer(InOutNetComBuffer* netbuffer, NETID destination);
 
 	unsigned int flag_LockIputPacket;
-	void LockInputPacket(void);
-	void UnLockInputPacket(void);
+	void LockInputPacket();
+	void UnLockInputPacket();
+
+    void ReceivedNetConnectionMessage(NetConnection* connection, NetConnectionMessage* msg);
     void ClearInputPacketList();
 
-	std::list<InputPacket*> m_InputPacketList;
+	std::list<NetConnectionMessage*> m_InputPacketList;
 	bool PutInputPacket2NetBuffer(InOutNetComBuffer& netBuf, NETID& returnNETID);
 
+    //Contains both the address to bind when in port listening mode or when connecting to remote host directly 
     NetAddress hostConnection;
+    
+    //Client room id to join when connecting to relay
+    NetRoomID clientRoom = 0;
 
 	//Host Date
 	size_t hostGeneralCommandCounter;
@@ -552,38 +560,7 @@ public:
 
 	NETID netidClientWhichWeWait; //netid игрока которому хост при миграции посылает команду прислать игровые комманды; нужен чтобы в случае выхода переслать комманду другому
 
-	//Host info //TODO originally for gamespy, we should use this for public listed hosts in future
-	const char* getMissionName();
-	const char* getGameName();
-	const char* getGameVer();
-	int getNumPlayers();
-	int getMaxPlayers();
-	int getHostPort();
-    bool hasPassword() {
-        return !gamePassword.empty();
-    }
-	enum e_perimeterGameState{
-		PGS_OPEN_WAITING,
-		PGS_CLOSE_WAITING,
-		PGS_CLOSED_PLAYING
-	};
-	e_perimeterGameState getGameState(void){
-		switch(m_state){
-		case PNC_STATE__HOST_TUNING_GAME:
-			return PGS_OPEN_WAITING;
-		case PNC_STATE__HOST_GAME:
-			return PGS_CLOSED_PLAYING;
-		default:
-			return PGS_CLOSED_PLAYING;
-		}
-	}
 	std::string gamePassword;
-
-	//Network settings
-	bool flag_NetworkSimulation;
-	bool flag_HostMigrate;
-	bool flag_NoUseDPNSVR;
-	int m_DPSigningLevel;//0-none 1-fast signed 2-full signed
 
 	//Pause client
 	bool setPause(bool pause);
@@ -595,9 +572,48 @@ public:
 
 	//Chat
 	void chatMessage(bool clanOnly, const std::string& text, const std::string& locale);
+    
+    //Client handshake
+    
+    /**
+     * Send the connection info to server, this provides the client data and other connection info to server
+     * to initiate handshake
+     * 
+     * @param connection the connection to send it to
+     * @return true if was sent
+     */
+    bool SendClientHandshake(NetConnection* connection) const;
 
-    //NetConnection stuff
-    void handleIncomingClientConnection(NetConnection* connection);
+    /**
+     * Reads the incoming client handshake and adds the player if OK, else is rejected
+     * 
+     * @param connection the connection where handshake came from
+     * @param msg contain the data about the client
+     */
+    void ProcessClientHandshake(NetConnection* connection, NetConnectionMessage* msg);
+
+    /**
+     * Sends the handshake response to client trying to connect
+     * 
+     * @param connection the connection where handshake came from
+     * @param netid the netid of client
+     * @param result the result to send to client
+     */
+    void SendClientHandshakeResponse(NetConnection* connection, NETID netid, e_ConnectResult result);
+
+    /**
+     * Processes the reply of client handshake that server sent
+     * 
+     * @param connection 
+     * @param msg 
+     */
+    void ProcessClientHandshakeResponse(NetConnection* connection, NetConnectionMessage* msg);
+    
+    //Relay
+    
+    ///Generates a relay setup room message
+    ///The returned struct is always same static allocated one so beware of storing it  
+    const NetRelayMessage_PeerSetupRoom& GenerateRelaySetupRoom() const;
 };
 
 

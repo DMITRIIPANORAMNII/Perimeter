@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 
-#include "GenericControls.h"
+#include "NetConnection.h"
+#include "NetComEventBuffer.h"
 #include "Universe.h"
 #include "Interpolation.h"
 
@@ -9,9 +10,12 @@
 #include "Triggers.h"
 #include "Config.h"
 
+#include "GenericControls.h"
+
 terUnitBase::terUnitBase(const UnitTemplate& data) 
 {
 	attr_.setKey(AttributeIDBelligerent(data.attribute()->ID, data.attribute()->belligerent));
+    xassert(attr() != nullptr);
 
 	Player = data.player();
 	alive_ = true;

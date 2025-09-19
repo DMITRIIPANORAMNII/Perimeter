@@ -1,18 +1,8 @@
 #ifndef __SERIALIZATION_IMPL_H__
 #define __SERIALIZATION_IMPL_H__
 
-#include <boost/type_traits/is_pointer.hpp>
-#include <boost/type_traits/is_array.hpp>
-#include <boost/type_traits/is_fundamental.hpp>
-#include <boost/mpl/equal_to.hpp>
-/*
-#include <boost/mpl/apply_if.hpp>
-#include <boost/mpl/identity.hpp>
-*/
 #include "SerializationMacro.h"
 #include "SerializationHelpers.h"
-#include <boost/mpl/int.hpp>
-#include <boost/type_traits/remove_const.hpp>
 #include <list>
 
 #include "RangedWrapper.h"
@@ -20,7 +10,7 @@
 //Serialization code for xmath.h
 
 template<class Archive>
-void Vect2f::serialize(Archive& ar) {
+void Vect2f::serialize_ref(Archive& ar) {
     if((ar.type() & (ARCHIVE_EDIT | ARCHIVE_BINARY)) || ar.isOutput()){
         ar & makeObjectWrapper(x, "x", "&x");
         ar & makeObjectWrapper(y, "y", "&y");
@@ -30,7 +20,7 @@ void Vect2f::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void Vect2i::serialize(Archive& ar) {
+void Vect2i::serialize_ref(Archive& ar) {
     if((ar.type() & (ARCHIVE_EDIT | ARCHIVE_BINARY)) || ar.isOutput()){
         ar & makeObjectWrapper(x, "x", "&x");
         ar & makeObjectWrapper(y, "y", "&y");
@@ -40,13 +30,13 @@ void Vect2i::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void Vect2s::serialize(Archive& ar) {
+void Vect2s::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(x, "x", "&x");
     ar & makeObjectWrapper(y, "y", "&y");
 }
 
 template<class Archive>
-void Vect3f::serialize(Archive& ar) {
+void Vect3f::serialize_ref(Archive& ar) {
     if((ar.type() & (ARCHIVE_EDIT | ARCHIVE_BINARY)) || ar.isOutput()){
         ar & makeObjectWrapper(x, "x", "&x");
         ar & makeObjectWrapper(y, "y", "&y");
@@ -57,40 +47,40 @@ void Vect3f::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void Vect3d::serialize(Archive& ar) {
+void Vect3d::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(x, "x", "&x");
     ar & makeObjectWrapper(y, "y", "&y");
     ar & makeObjectWrapper(z, "z", "&z");
 }
 
 template<class Archive>
-void Mat3f::serialize(Archive& ar) {
+void Mat3f::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(xrow(), "xrow", "xrow");
     ar & makeObjectWrapper(yrow(), "yrow", "yrow");
     ar & makeObjectWrapper(zrow(), "zrow", "zrow");
 }
 
 template<class Archive>
-void Mat3d::serialize(Archive& ar) {
+void Mat3d::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(xrow(), "xrow", "xrow");
     ar & makeObjectWrapper(yrow(), "yrow", "yrow");
     ar & makeObjectWrapper(zrow(), "zrow", "zrow");
 }
 
 template<class Archive>
-void MatXf::serialize(Archive& ar) {
+void MatXf::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(rot(), "rotation", "Ориентация");
     ar & makeObjectWrapper(trans(), "position", "Позиция");
 }
 
 template<class Archive>
-void MatXd::serialize(Archive& ar) {
+void MatXd::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(rot(), "rotation", "Ориентация");
     ar & makeObjectWrapper(trans(), "position", "Позиция");
 }
 
 template<class Archive>
-void QuatF::serialize(Archive& ar) {
+void QuatF::serialize_ref(Archive& ar) {
     if((ar.type() & (ARCHIVE_EDIT | ARCHIVE_BINARY)) || ar.isOutput()){
         ar & makeObjectWrapper(s_, "s", "&s");
         ar & makeObjectWrapper(x_, "x", "&x");
@@ -102,7 +92,7 @@ void QuatF::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void QuatD::serialize(Archive& ar) {
+void QuatD::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(s_, "s", "&s");
     ar & makeObjectWrapper(x_, "x", "&x");
     ar & makeObjectWrapper(y_, "y", "&y");
@@ -110,19 +100,19 @@ void QuatD::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void Se3f::serialize(Archive& ar) {
+void Se3f::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(rot(), "rotation", "Ориентация");
     ar & makeObjectWrapper(trans(), "position", "Позиция");
 }
 
 template<class Archive>
-void Se3d::serialize(Archive& ar) {
+void Se3d::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(rot(), "rotation", "Ориентация");
     ar & makeObjectWrapper(trans(), "position", "Позиция");
 }
 
 template<class Archive>
-void Vect4f::serialize(Archive& ar) {
+void Vect4f::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(x, "x", "&x");
     ar & makeObjectWrapper(y, "y", "&y");
     ar & makeObjectWrapper(z, "z", "&z");
@@ -130,7 +120,7 @@ void Vect4f::serialize(Archive& ar) {
 }
 
 template<class Archive>
-void Mat4f::serialize(Archive& ar) {
+void Mat4f::serialize_ref(Archive& ar) {
     ar & makeObjectWrapper(xrow(), "xrow", "xrow");
     ar & makeObjectWrapper(yrow(), "yrow", "yrow");
     ar & makeObjectWrapper(zrow(), "zrow", "zrow");

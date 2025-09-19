@@ -82,8 +82,6 @@ class CustomGraphOptions : public Options {
 		bool bumpChaos;
 		float particleRate;
 
-		bool compressedTextures;
-
 		bool operator == (const CustomGraphOptions &cgo) const {
 			return (
 						landscapeDetails == cgo.landscapeDetails
@@ -97,7 +95,6 @@ class CustomGraphOptions : public Options {
 					&&	bumpMapping == cgo.bumpMapping
 					&&	bumpChaos == cgo.bumpChaos
 					&&	particleRate == cgo.particleRate
-					&&	compressedTextures == cgo.compressedTextures
 				);
 		};
 		bool operator != (const CustomGraphOptions &cgo) const {
@@ -119,6 +116,7 @@ class GraphOptions : public Options {
         int uiAnchor;
         bool grabInput;
         bool fogEnable;
+        bool vsyncEnable;
 
 		bool operator == (const GraphOptions &cgo) const {
 			return (
@@ -126,6 +124,7 @@ class GraphOptions : public Options {
 					&&	resolution == cgo.resolution
                     &&	colorDepth == cgo.colorDepth
                     &&	uiAnchor == cgo.uiAnchor
+                    &&	vsyncEnable == cgo.vsyncEnable
                     &&	grabInput == cgo.grabInput
                     &&	fogEnable == cgo.fogEnable
 				);

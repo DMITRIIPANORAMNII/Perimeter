@@ -15,7 +15,7 @@
 #include "../gemsiii/filter.h"
 #include "files/files.h"
 
-static char* cache_dir="cache/font";
+static const char* cache_dir="cache/font";
 
 class cFontImage:public cFileImage
 {
@@ -271,6 +271,7 @@ bool cFontInternal::CreateTexture(const char* fontname, const char* filename, in
 	pTexture->SetTimePerFrame(0);
 	pTexture->SetWidth(FontImage.GetX());
 	pTexture->SetHeight(FontImage.GetY());
+    pTexture->label = std::string(fontname) + "_h" + std::to_string(height);
 
 	bool err=false;
 	err=err || gb_VisGeneric->GetRenderDevice()->CreateTexture(pTexture,&FontImage)!=0;
@@ -317,12 +318,12 @@ bool cFontInternal::Save(const char* fname,cFontImage& fnt)
 		return false;
 
 	uint32_t size=Font.size();
-	_write(file,&FontHeight,sizeof(FontHeight));
-	_write(file,&size,sizeof(size));
-	_write(file,&Font[0],size*sizeof(Vect3f));
+	bool ok = _write(file,&FontHeight,sizeof(FontHeight)) == sizeof(FontHeight);
+	if (ok) ok = _write(file,&size,sizeof(size)) == sizeof(size);
+	if (ok) ok = _write(file,&Font[0],size*sizeof(Vect3f)) == size*sizeof(Vect3f);
 	_close(file);
     scan_resource_paths(cache_path);
-	return true;
+	return ok;
 }
 
 bool cFontInternal::Load(const char* fname,cFontImage& fnt)
@@ -342,12 +343,12 @@ bool cFontInternal::Load(const char* fname,cFontImage& fnt)
 		return false;
 
 	uint32_t size=0;
-	_read(file,&FontHeight,sizeof(FontHeight));
-	_read(file,&size,sizeof(size));
+	bool ok = _read(file,&FontHeight,sizeof(FontHeight)) == sizeof(FontHeight);
+	if (ok) ok = _read(file,&size,sizeof(size)) == sizeof(size);
 	Font.resize(size);
-	_read(file,&Font[0],size*sizeof(Vect3f));
+	if (ok) ok = _read(file,&Font[0],size*sizeof(Vect3f)) == size*sizeof(Vect3f);
 	_close(file);
-	return true;
+	return ok;
 }
 
 void str_replace_slash(char* str)

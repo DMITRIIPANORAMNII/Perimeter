@@ -20,7 +20,7 @@ namespace tx3d {
 	class SharedPointer {
 		public:
 			SharedPointer() : useCount(0) {}
-			virtual ~SharedPointer() {}
+			virtual ~SharedPointer() = default;
 
 			void referenced() {
 				if (useCount == -1) {
@@ -43,7 +43,7 @@ namespace tx3d {
 		private:
 			int useCount;
 
-			SharedPointer* operator &();
+			//SharedPointer* operator &();
 	};
 
 }

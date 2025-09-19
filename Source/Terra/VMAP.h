@@ -183,19 +183,19 @@ struct vrtMap {
 		void finit(void){ delete buf; }
 	};
 
-	static char* worldDataFileLinear;
-	static char* worldDataFile;
-	static char* worldDataFileSection;
-	static char* worldIniFile;
-	//static char* worldParamZPIniFile;
-	static char* worldNetDataFile;
-	static char* worldBuildScenarioFile;
-	static char* worldGeoPalFile;
-	static char* worldDamPalFile;
-	static char* worldLeveledTextureFile;
-	static char* worldHardnessFile;
+	static const char* worldDataFileLinear;
+	static const char* worldDataFile;
+	static const char* worldDataFileSection;
+	static const char* worldIniFile;
+	//static const char* worldParamZPIniFile;
+	static const char* worldNetDataFile;
+	static const char* worldBuildScenarioFile;
+	static const char* worldGeoPalFile;
+	static const char* worldDamPalFile;
+	static const char* worldLeveledTextureFile;
+	static const char* worldHardnessFile;
 
-	static char* worldRGBCache;
+	static const char* worldRGBCache;
 
 
 	unsigned char* changedT;
@@ -484,7 +484,7 @@ struct vrtMap {
 	void prepare();
 	void selectUsedWorld(char* _patch2WorldIniFile);
 #elif _PERIMETER_
-	void prepare(char* name);
+	void prepare(const char* name);
     void compressWorlds(int mode);
 	void selectUsedWorld(int nWorld);
 #endif
@@ -789,7 +789,7 @@ struct vrtMap {
 	//Высокоуровневая функция работы с поверхностью GetAlt
 	/////////// FUNCTION GetAlt ///////////
 	unsigned short GetAlt(int offset) {
-		unsigned short V;
+		unsigned short V = 0;
 		switch(VxBufWorkMode){
 		case GEOONLY:
 			V=GetAltGeo(offset);
@@ -838,7 +838,8 @@ struct vrtMap {
 	void PutAltGeo(int offset, int V) {
 		VxGBuf[offset]=V >>VX_FRACTION;
 		if(VxDBuf[offset] <= V >>VX_FRACTION){ //Если Гео слой достиг Dam слоя
-			AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~VX_FRACTION_MASK);
+            AtrBuf[offset] &= ~VX_FRACTION_MASK;
+            AtrBuf[offset] |= V & VX_FRACTION_MASK;
 			SetTer(offset,GetGeoType(offset,V));
 			VxDBuf[offset]=0; //Dam слой становится равный 0
 		}
@@ -858,7 +859,8 @@ struct vrtMap {
 		}
 		else {
 			VxDBuf[offset]=V >>VX_FRACTION;
-			AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~VX_FRACTION_MASK);
+            AtrBuf[offset] &= ~VX_FRACTION_MASK;
+            AtrBuf[offset] |= V & VX_FRACTION_MASK;
 			//SetTer(offset, TgaBuf[offset]);
 			return 1; //Dam слой успешно установился
 		}
@@ -900,8 +902,9 @@ struct vrtMap {
 	//........................................
 	/////////// FUNCTION Simple PutAltGeo ///////////
 	void SPutAltGeo(int offset, int V) {
-		VxGBuf[offset]=V >>VX_FRACTION;
-		AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~(VX_FRACTION_MASK|At_NOTPURESURFACE));
+        VxGBuf[offset] = V >> VX_FRACTION;
+        AtrBuf[offset] &= ~(VX_FRACTION_MASK | At_NOTPURESURFACE);
+        AtrBuf[offset] |= V & VX_FRACTION_MASK;
 	}
 	void SPutAltGeo(int x,int y, int V) {
 		SPutAltGeo(offsetBuf(x,y),V);
@@ -909,8 +912,9 @@ struct vrtMap {
 	//.........................................
 	/////////// FUNCTION Simple PutAltDam ///////////
 	void SPutAltDam(int offset, int V) {
-		VxDBuf[offset]=V >>VX_FRACTION;
-		AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~(VX_FRACTION_MASK|At_NOTPURESURFACE));
+		VxDBuf[offset] = V >> VX_FRACTION;
+        AtrBuf[offset] &= ~(VX_FRACTION_MASK | At_NOTPURESURFACE);
+		AtrBuf[offset] |= V & VX_FRACTION_MASK;
 	}
 	void SPutAltDam(int x,int y, int V) {
 		SPutAltDam(offsetBuf(x,y),V);
@@ -919,7 +923,8 @@ struct vrtMap {
 	void SPutAlt(int offset, int V) {
 		if(VxDBuf[offset]==0) VxGBuf[offset]=V>>VX_FRACTION;
 		else VxDBuf[offset]=V>>VX_FRACTION;
-		AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~VX_FRACTION_MASK);
+        AtrBuf[offset] &= ~VX_FRACTION_MASK;
+        AtrBuf[offset] |= V & VX_FRACTION_MASK;
 	}
 	void SPutAlt(int x,int y, int V) {
 		SPutAlt(offsetBuf(x,y),V);
@@ -927,7 +932,8 @@ struct vrtMap {
 	void SPutAltAndClearZL(int offset, int V) {
 		if(VxDBuf[offset]==0) VxGBuf[offset]=V>>VX_FRACTION;
 		else VxDBuf[offset]=V>>VX_FRACTION;
-		AtrBuf[offset]=(V &VX_FRACTION_MASK) | (AtrBuf[offset]&=~(VX_FRACTION_MASK|At_NOTPURESURFACE));
+        AtrBuf[offset] &= ~(VX_FRACTION_MASK | At_NOTPURESURFACE);
+        AtrBuf[offset] |= V & VX_FRACTION_MASK;
 	}
 
 	void SDig(int x, int y, int dv){
@@ -995,9 +1001,6 @@ extern vrtMap vMap;
 //Работа с INI Файлом
 extern char* GetINIstringV(const std::string& iniFile,const char* section,const char* key);
 extern void SaveINIstringV(const std::string& iniFile,const char* section,const char* key,const char* var);
-
-extern unsigned char* convert_vox2vid(int vox, char* buf);
-extern int convert_vid2vox(char* buf);
 
 #ifdef _SURMAP_
 const unsigned int SLT_SIZE=512;

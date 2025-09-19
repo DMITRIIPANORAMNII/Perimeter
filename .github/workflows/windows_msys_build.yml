@@ -3,6 +3,11 @@ name: Windows MSYS Build
 on:
   push:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 env:
   GH_CACHE_KEY: 8
@@ -13,17 +18,19 @@ jobs:
       fail-fast: false
       matrix:
         env: [
-          {sys: mingw64, build_type: Debug,   arch: x86_64, arch_zip: x64},
-          {sys: mingw32, build_type: Release, arch: i686,   arch_zip: x86},
-          {sys: mingw64, build_type: Release, arch: x86_64, arch_zip: x64},
+          #{sys: mingw32, build_type: Debug,   arch: i686,   arch_zip: x86, packages: "},
+          {sys: mingw64, build_type: Debug,   arch: x86_64, arch_zip: x64, packages: "libbacktrace:p"},
+          #{sys: mingw32, build_type: Release, arch: i686,   arch_zip: x86, packages: ""},
+          {sys: mingw64, build_type: Release, arch: x86_64, arch_zip: x64, packages: "libbacktrace:p"},
         ]
     name: ${{matrix.env.build_type}} ${{matrix.env.sys}}
+    if: github.event.pull_request.draft != true
     defaults:
       run:
         shell: msys2 {0}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
           msystem: "${{matrix.env.sys}}"
@@ -45,12 +52,12 @@ jobs:
             SDL2_mixer:p
             boost:p
             lld:p
-            libbacktrace:p
             libvpx:p
             nasm:p
             yasm:p
             zlib:p
-      - uses: actions/cache@v3
+            ${{matrix.env.packages}}
+      - uses: actions/cache@v4
         id: cache
         with:
           path: |
@@ -61,13 +68,13 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true' && matrix.env.arch_zip != ''
         run: |
           mkdir downloads
-          wget https://github.com/libsdl-org/SDL_image/releases/download/release-2.6.3/SDL2_image-2.6.3-win32-${{matrix.env.arch_zip}}.zip -O downloads/SDL2_image.zip
-          wget https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3-win32-${{matrix.env.arch_zip}}.zip -O downloads/SDL2_mixer.zip
+          wget https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2-win32-${{matrix.env.arch_zip}}.zip -O downloads/SDL2_image.zip
+          wget https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.0/SDL2_mixer-2.8.0-win32-${{matrix.env.arch_zip}}.zip -O downloads/SDL2_mixer.zip
           unzip downloads/SDL2_image.zip -d downloads/SDL2_image
           unzip downloads/SDL2_mixer.zip -d downloads/SDL2_mixer
       - name: ffmpeg -- download
         if: steps.cache.outputs.cache-hit != 'true'
-        run: git clone --depth 1 --branch n5.1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+        run: git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
       - name: ffmpeg -- configure
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -79,10 +86,9 @@ jobs:
           --enable-swresample \
           --enable-zlib \
           --enable-libvpx \
-          --enable-libvorbis \
-          --enable-demuxer=avi,rawvideo,bink,matroska \
-          --enable-decoder=png,rawvideo,bink,binkaudio_dct,vorbis,opus,vp8,vp9 \
-          --enable-parser=png,vp9 \
+          --enable-demuxer=rawvideo,bink,matroska \
+          --enable-decoder=rawvideo,bink,binkaudio_dct,opus,vp8,vp9 \
+          --enable-parser=vp9 \
           --enable-filter=aresample,aformat \
           --enable-protocol=file \
           --disable-d3d11va \
@@ -128,7 +134,8 @@ jobs:
           cp build/Source/perimeter.exe perimeter/bin/
       - name: perimeter -- strip binary
         run: strip -g -x perimeter/bin/perimeter.exe
-      - uses: actions/upload-artifact@v1
+        if: matrix.env.build_type == 'Release'
+      - uses: actions/upload-artifact@v4
         with:
           name: Perimeter MSYS ${{matrix.env.build_type}} ${{matrix.env.sys}}
           path: perimeter/bin/

@@ -5,10 +5,16 @@
  * Virtual Keys, Standard Set
  */
 
+#define VK_MASK           0xFF
+#define VK_MAX_CODE       VK_MASK
+
+#define VK_NONE           0x0
 #define VK_LBUTTON        0x01
 #define VK_RBUTTON        0x02
 //#define VK_CANCEL         0x03
 #define VK_MBUTTON        0x04    /* NOT contiguous with L & RBUTTON */
+#define VK_XBUTTON1       0x05
+#define VK_XBUTTON2       0x06
 
 #define VK_BACK           0x08
 #define VK_TAB            0x09
@@ -78,33 +84,28 @@
 #define VK_F10            0x79
 #define VK_F11            0x7A
 #define VK_F12            0x7B
-//#define VK_F13            0x7C
-//#define VK_F14            0x7D
-//#define VK_F15            0x7E
-//#define VK_F16            0x7F
-//#define VK_F17            0x80
-//#define VK_F18            0x81
-//#define VK_F19            0x82
-//#define VK_F20            0x83
-//#define VK_F21            0x84
-//#define VK_F22            0x85
-//#define VK_F23            0x86
-//#define VK_F24            0x87
+#define VK_F13            0x7C
+#define VK_F14            0x7D
+#define VK_F15            0x7E
+#define VK_F16            0x7F
+#define VK_F17            0x80
+#define VK_F18            0x81
+#define VK_F19            0x82
+#define VK_F20            0x83
+#define VK_F21            0x84
+#define VK_F22            0x85
+#define VK_F23            0x86
+#define VK_F24            0x87
 
 #define VK_NUMLOCK        0x90
 #define VK_SCROLL         0x91
 
-/*
- * VK_L* & VK_R* - left and right Alt, Ctrl and Shift virtual keys.
- * Used only as parameters to GetAsyncKeyState() and GetKeyState().
- * No other API or message will distinguish left and right keys in this way.
- */
-//#define VK_LSHIFT         0xA0
-//#define VK_RSHIFT         0xA1
-//#define VK_LCONTROL       0xA2
-//#define VK_RCONTROL       0xA3
-//#define VK_LMENU          0xA4
-//#define VK_RMENU          0xA5
+#define VK_LSHIFT         0xA0
+#define VK_RSHIFT         0xA1
+#define VK_LCONTROL       0xA2
+#define VK_RCONTROL       0xA3
+#define VK_LALT          0xA4
+#define VK_RALT          0xA5
 
 //#define VK_ATTN           0xF6
 //#define VK_CRSEL          0xF7
@@ -121,23 +122,28 @@
 //#define VK_OEM_ALT		0x12
 //VK_OEM_1
 #define VK_SEMICOLON	0xBA
+//VK_OEM_PLUS
 #define VK_PLUS         0xBB
+//VK_OEM_COMMA
 #define VK_COMMA        0xBC
+//VK_OEM_MINUS
 #define VK_MINUS        0xBD
+//VK_OEM_PERIOD
 #define VK_PERIOD       0xBE
 //VK_OEM_2
 #define VK_SLASH        0xBF
-#define VK_LESS         0xE2
 //VK_OEM_3
 #define VK_TILDE        0xC0
 //VK_OEM_4
 #define VK_LEFTBRACKET  0xDB
 //VK_OEM_5
-#define VK_BKSLASH      0xDC
+#define VK_BACKSLASH    0xDC
 //VK_OEM_6
 #define VK_RIGHTBRACKET 0xDD
 //VK_OEM_7
 #define VK_QUOTE        0xDE
+//VK_OEM_102
+#define VK_LESS         0xE2
 //#define VK_LBR		0x5B
 //#define VK_RBR		0x5D
 

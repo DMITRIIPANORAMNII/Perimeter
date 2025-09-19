@@ -1,32 +1,50 @@
-#include "StdAfx.h"
+#include "StdAfxSound.h"
 #include "SoundInternal.h"
 #include "Sample.h"
+#include "../Render/inc/RenderMT.h"
 #include <unordered_map>
 
 ///Used for tracking what channel is playing what sample, if sample is not here then is not being played
-std::unordered_map<int, SND_Sample*> channelSamples;
+std::vector<SND_Sample*> channelSamples;
+
+#if 2 < SDL_MAJOR_VERSION
+//TODO see how to set audioDevice from SDL_Mixer selected device
+//#define USE_SDL_AUDIO_LOCK
+#endif
+
+#ifdef USE_SDL_AUDIO_LOCK
+SDL_AudioDeviceID audioDevice = 1;
+#else
+///Avoid channelSamples being accessed by callback while iterating/modifying
+MTSection channelSamplesLock;
+#endif
 
 // make a channelDone function
 static void callbackChannelFinished(int channel)
 {
     //printf("Channel %d finished playing.\n", channel);
-    channelSamples.erase(channel);
+#ifndef USE_SDL_AUDIO_LOCK
+    MTAuto mtenter(&channelSamplesLock);
+#endif
+    channelSamples[channel] = nullptr;
 }
 
-void SNDSetupChannelCallback(bool init) {
+void SNDSetupChannelCallback(int mixChannels, bool init) {
     Mix_ChannelFinished(init ? callbackChannelFinished : nullptr);
-    if (!init) {
-        SDL_LockAudio();
+    if (init) {
+        channelSamples.resize(mixChannels, nullptr);
+    } else {
         channelSamples.clear();
-        SDL_UnlockAudio();
     }
 }
 
 MixChunkWrapper::~MixChunkWrapper() {
     if (chunk) {
-        //Only free if sound is inited
-        if (SND::has_sound_init) {
+        //Only free with Mix if sound is inited, check Mix_Init just in case
+        if (SND::has_sound_init || (Mix_Init(0) != 0)) {
             Mix_FreeChunk(chunk);
+        } else {
+            SDL_free(chunk);
         }
         chunk = nullptr;
     }
@@ -48,7 +66,7 @@ SND_Sample::~SND_Sample() {
     chunk = nullptr;
 }
 
-bool SND_Sample::loadRawData(uint8_t* src_data, size_t src_len, bool copy) {
+bool SND_Sample::loadRawData(uint8_t* src_data, size_t src_len, bool copy, const std::string& file_name) {
     Mix_Chunk* new_chunk = (Mix_Chunk*) SDL_malloc(sizeof(Mix_Chunk));
     new_chunk->allocated = 1;
     if (copy) {
@@ -63,7 +81,7 @@ bool SND_Sample::loadRawData(uint8_t* src_data, size_t src_len, bool copy) {
     } else {
         new_chunk->volume = 128;
     }
-    chunk_source = chunk = std::make_shared<MixChunkWrapper>(new_chunk);
+    chunk_source = chunk = std::make_shared<MixChunkWrapper>(new_chunk, file_name);
     this->chunk_millis = SNDcomputeAudioLengthMS(src_len);
     this->chunk_frequency = this->frequency;
     return true;
@@ -119,14 +137,22 @@ int SND_Sample::play() {
         chunk_play->volume = getChunkSource()->volume;
         bool loop = this->external_looped_restart ? false : this->looped; //Set loop flag if not externally controlled 
         channel = Mix_PlayChannel(channel, chunk_play, loop ? -1 : 0);
-        if(channel == -1) { //Return's -1 if fails to play
-            fprintf(stderr, "Mix_PlayChannel error: %s\n", Mix_GetError());
+        if (channel == -1) { //Return's -1 if fails to play
+            fprintf(stderr, "Mix_PlayChannel error (%s): %s\n",  chunk->fileName.c_str(), Mix_GetError());
             channel = SND_NO_CHANNEL;
         } else {
             //Store channel for callback
-            SDL_LockAudio();
+            xassert(channel < channelSamples.size());
+#ifdef USE_SDL_AUDIO_LOCK
+            SDL_LockAudioDevice(audioDevice);
+#else
+            MTAuto mtenter(&channelSamplesLock);
+#endif
+            xassert(channelSamples[channel] == nullptr);
             channelSamples[channel] = this;
-            SDL_UnlockAudio();
+#ifdef USE_SDL_AUDIO_LOCK
+            SDL_UnlockAudioDevice(audioDevice);
+#endif
         }
         
     }
@@ -144,7 +170,22 @@ bool SND_Sample::updateEffects(int channel) {
     if (channel != SND_NO_CHANNEL) {
         //Setup volume
         this->volume = std::max(0.0f, std::min(1.0f, this->volume));
-        Mix_Volume(channel, static_cast<int>(128.0f * this->volume * SND::global_volume));
+        float global_vol = 1.0f;
+        switch (global_volume_select) {
+            default:
+            case GLOBAL_VOLUME_IGNORE:
+                break;
+            case GLOBAL_VOLUME_CHANNEL:
+                global_vol = channel_group == SND_GROUP_SPEECH ? 1.0f : SND::sound_volume;
+                break;
+            case GLOBAL_VOLUME_VOICE:
+                global_vol = SND::voice_volume;
+                break;
+            case GLOBAL_VOLUME_EFFECTS:
+                global_vol = SND::sound_volume;
+                break;
+        }
+        Mix_Volume(channel, static_cast<int>(128.0f * this->volume * global_vol));
 
         //Setup panning
         this->pan = std::max(0.0f, std::min(1.0f, this->pan));
@@ -176,15 +217,21 @@ bool SND_Sample::updateEffects() {
 
 int SND_Sample::getChannel() const {
     if (!SND::has_sound_init) return SND_NO_CHANNEL;
-    SDL_LockAudio();
+#ifdef USE_SDL_AUDIO_LOCK
+    SDL_LockAudioDevice(audioDevice);
+#else
+    MTAuto mtenter(&channelSamplesLock);
+#endif
     int channel = SND_NO_CHANNEL;
-    for (auto entry : channelSamples) {
-        if (entry.second == this) {
-            channel = entry.first;
+    for (int i = 0; i < channelSamples.size(); ++i) {
+        if (channelSamples[i] == this) {
+            channel = i;
             break;
         }
     }
-    SDL_UnlockAudio();
+#ifdef USE_SDL_AUDIO_LOCK
+    SDL_UnlockAudioDevice(audioDevice);
+#endif
     return channel;
 }
 
@@ -265,7 +312,7 @@ bool SND_Sample::convertChunkFrequency() {
             new_chunk->volume = source->volume;
             new_chunk->abuf = cvt.buf;
             new_chunk->alen = cvt.len_cvt;
-            chunk = std::make_shared<MixChunkWrapper>(new_chunk);
+            chunk = std::make_shared<MixChunkWrapper>(new_chunk, chunk_source ? chunk_source->fileName : "");
             this->chunk_millis = SNDcomputeAudioLengthMS(cvt.len_cvt);
             this->chunk_frequency = this->frequency;
             return true;

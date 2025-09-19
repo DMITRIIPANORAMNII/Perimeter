@@ -45,22 +45,8 @@ float CAMERA_ZOOM_SPEED_DELTA = 10.0f;
 float CAMERA_ZOOM_MOUSE_MULT = 300.0f;
 float CAMERA_ZOOM_SPEED_DAMP = 0.7f;
 float CAMERA_ZOOM_SPEED_MASS = 2.0f;
-
 float CAMERA_FOLLOW_AVERAGE_TAU = 0.1;
-
-//ограничения
-float CAMERA_MAX_HEIGHT = 5000.0f;
-float CAMERA_MIN_HEIGHT = 200.0f;
-float CAMERA_DEFAULT_HEIGHT = 500.0f;
 float CAMERA_MOVE_ZOOM_SCALE = 500.0f;
-
-float CAMERA_ZOOM_MIN = 300.0f;
-float CAMERA_ZOOM_MAX = 2500.0f;
-float CAMERA_THETA_MIN = _PI/5.0f;
-float CAMERA_THETA_MAX = _PI/2.85f;
-
-float CAMERA_ZOOM_TERRAIN_THRESOLD1 = CAMERA_MIN_HEIGHT + 100.0f;
-float CAMERA_ZOOM_TERRAIN_THRESOLD2 = CAMERA_MAX_HEIGHT;
 
 float CAMERA_WORLD_SCROLL_BORDER = 200.0f;
 
@@ -151,11 +137,17 @@ PlayerColor playerColors[int playerColorsSize] =
 	{ unitColor = { 0.3, 0.3, 0.0, 1.0 }; fieldColor = { 0.3, 0.3, 0.0, 1.0 }; zeroLayerColor = { 0.3, 0.3, 0.0, 0.8 }; },
     //Purple dark
 	{ unitColor = { 0.2, 0.0, 0.3, 1.0 }; fieldColor = { 0.2, 0.0, 0.3, 1.0 }; zeroLayerColor = { 0.1, 0.0, 0.3, 0.8 }; },
-    //Grey
-	{ unitColor = { 0.4, 0.4, 0.4, 1.0 }; fieldColor = { 0.3, 0.3, 0.3, 1.0 }; zeroLayerColor = { 0.3, 0.3, 0.3, 0.8 }; },
+	//Red light
+	//{ unitColor = { 0.8, 0.4, 0.4, 1.0 }; fieldColor = { 0.8, 0.2, 0.2, 1.0 }; zeroLayerColor = { 0.8, 0.4, 0.3, 0.8 }; },
+	//Orange light
+	//{ unitColor = { 0.8, 0.6, 0.4, 1.0 }; fieldColor = { 0.8, 0.6, 0.2, 1.0 }; zeroLayerColor = { 0.8, 0.6, 0.3, 0.8 }; },
+	//Green light
+	//{ unitColor = { 0.4, 0.8, 0.4, 1.0 }; fieldColor = { 0.2, 0.8, 0.2, 1.0 }; zeroLayerColor = { 0.4, 0.6, 0.3, 0.8 }; },
+    //Grey - hardly visible so is removed
+	//{ unitColor = { 0.4, 0.4, 0.4, 1.0 }; fieldColor = { 0.3, 0.3, 0.3, 1.0 }; zeroLayerColor = { 0.3, 0.3, 0.3, 0.8 }; },
     //Black
 	{ unitColor = { 0.1, 0.1, 0.1, 1.0 }; fieldColor = { 0.1, 0.1, 0.1, 1.0 }; zeroLayerColor = { 0.1, 0.1, 0.1, 0.8 }; },
-	//Neutral
+	//Neutral - used for unpowered buildings, unselectable
 	{ unitColor = { 1.0, 1.0, 0.7, 1 }; }
 };
 

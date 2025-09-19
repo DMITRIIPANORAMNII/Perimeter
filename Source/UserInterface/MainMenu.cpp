@@ -1,6 +1,5 @@
 
 #include "StdAfx.h"
-#include "MainMenu.h"
 #include "Config.h"
 #include "Runtime.h"
 #include "terra.h"
@@ -8,6 +7,7 @@
 #include "Universe.h"
 #include "UniverseInterface.h"
 #include "GameShell.h"
+#include "AudioPlayer.h"
 #include "PerimeterShellUI.h"
 #include "Controls.h"
 #include "../Sound/PerimeterSound.h"
@@ -25,6 +25,7 @@
 #include "BelligerentSelect.h"
 #include "GameContent.h"
 #include "codepages/codepages.h"
+#include "MainMenu.h"
 
 extern char _bCursorVisible;
 extern char _bMenuMode;
@@ -50,7 +51,8 @@ MissionDescription missionToExec;
 
 
 bool intfCanHandleInput() {
-	return !bgScene.isPlaying() && _shellIconManager.isDynQueueEmpty();
+	return !bgScene.isPlaying()
+        && _shellIconManager.isDynQueueEmpty();
 }
 
 std::string getOriginalMissionName(const std::string& originalSaveName) {
@@ -215,53 +217,65 @@ int resultWNDID = -1;
 terUniverseInterfaceMessage resultID = UNIVERSE_INTERFACE_MESSAGE_GAME_RESULT_UNDEFINED;
 
 int goToResultQuant( float, float ) {
-	if (!gameShell->GameActive) {
-		return 0;
-	} else if (menuChangingDone) {
-		processInterfaceMessage(resultID, resultWNDID);
-		return 0;
-	}
-	return 1;
+    if (!gameShell->GameActive) {
+        return 0;
+    } else if (menuChangingDone || gameShell->currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
+        processInterfaceMessage(resultID, resultWNDID);
+        return 0;
+    }
+    return 1;
 }
 
 void processInterfaceMessageLater(terUniverseInterfaceMessage id, int wndIDToHide = -1) {
-	if (gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::MULTIPLAYER) {
-		resultID = id;
-        resultWNDID = wndIDToHide;
-		_shellIconManager.AddDynamicHandler( goToResultQuant, CBCODE_QUANT );
-	} else {
-		processInterfaceMessage(id, wndIDToHide);
-	}
+    resultID = id;
+    resultWNDID = wndIDToHide;
+    _shellIconManager.AddDynamicHandler( goToResultQuant, CBCODE_QUANT );
 }
 
-void loadMapVector(std::vector<MissionDescription>& mapVector, const std::string& path, const std::string& mask, bool replay) {
-	//fill map list
-	std::string path_str = convert_path_native(path.c_str());
-    path_str = string_to_lower(path_str.c_str());
-	
-	//Collect files and order
-	std::vector<std::string> paths;
-    for (const auto & entry : get_content_entries_directory(path_str)) {
-        if (mask.empty() || endsWith(entry->key, mask)) {
-            paths.emplace_back(entry->key);
-        }
-    }
-    sort(paths.begin(), paths.end());
-    
-    //Fill map list from paths
-    for (std::string& entry_path : paths) {
-        MissionDescription mission;
-        mission.setSaveName(entry_path.c_str());
-        mission.setReelName(entry_path.c_str());
-//			mission.gameType_ = replay ? MissionDescription::GT_playRellGame : MissionDescription::GT_SPGame;
-        if((!replay) || isCorrectPlayReelFile(mission.playReelPath().c_str())) {
-            mapVector.push_back(mission);
-//			MissionDescription mission((string(path) + FindFileData.cFileName).c_str(), replay ? MissionDescription::GT_playRellGame : MissionDescription::GT_SPGame);
-//			if(mission.worldID() != -1)
-//				mapVector.push_back(mission);
-        }
-    }
+void loadMapVector(
+        std::vector<MissionDescription>& maps,
+        const std::string& path,
+        const std::string& mask, bool replay
+) {
+    static std::vector<const char*> paths = { nullptr };
+    paths[0] = path.c_str();
+    loadMapVector(maps, paths, mask, replay);
 }
+
+void loadMapVector(
+        std::vector<MissionDescription>& mapVector,
+        const std::vector<const char*>& paths,
+        const std::string& mask, bool replay
+) {	
+	//Collect files
+    //std::set<std::string> names;
+    for (const auto& path : paths) {
+        std::string path_str = convert_path_native(path);
+        path_str = string_to_lower(path_str.c_str());
+        for (const auto& entry: get_content_entries_directory(path_str)) {
+            if (mask.empty() || endsWith(entry->key, mask)) {
+                MissionDescription mission;
+                mission.setSaveName(entry->key.c_str());
+                const auto& missionName = mission.missionName();
+                if (missionName.empty()) {// || !names.insert(missionName).second) {
+                    continue;
+                }
+                mission.setReelName(entry->key.c_str());
+                
+                //If we are loading relays and is not correct, skip
+                if (replay && !isCorrectPlayReelFile(mission.playReelPath().c_str())) {
+                    continue;
+                }
+                
+                mapVector.push_back(mission);
+            }
+        }
+    }
+    
+    //Sort it
+    std::sort(mapVector.begin(), mapVector.end());
+}
+
 void checkMissionDescription(int index, std::vector<MissionDescription>& mVect, GameType gameType) {
 	if (mVect[index].worldID() == -1) {
         const char* filepath;
@@ -731,11 +745,26 @@ int SwitchMenuBGQuant2( float, float ) {
 			switch (_id_on) {
                 case SQSH_MM_START_SCR:
                     //Only enable if user didn't choose a specific content
+#ifdef EMSCRIPTEN
+                    _shellIconManager.GetWnd(SQSH_MM_QUIT_BTN)->Enable(false);
+#endif
+#ifdef GPX
+                    _shellIconManager.GetWnd(SQSH_MM_LANG_BTN)->Enable(false);
+                    _shellIconManager.GetWnd(SQSH_MM_CONTENT_CHOOSER_BTN)->Enable(false);
+#endif
                     _shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_BTN)->Enable(terGameContentAvailable == terGameContentSelect);
                     break;
 				case SQSH_MM_SINGLE_SCR:
                     //Only enable if user didn't choose a specific content
                     _shellIconManager.GetWnd(SQSH_MM_BATTLE_BTN)->Enable(terGameContentAvailable == terGameContentSelect);
+#ifdef EMSCRIPTEN
+                    if (_shellIconManager.initialMenu == SQSH_MM_SINGLE_SCR) {
+                        _shellIconManager.GetWnd(SQSH_MM_BACK_FROM_SINGLE_BTN)->Enable(false);
+                    }
+#endif
+#ifdef GPX
+                    _shellIconManager.GetWnd(SQSH_MM_CONTENT_CHOOSER_BTN)->Enable(false);
+#endif
 					if (!debug_allow_replay) {
 						_shellIconManager.GetWnd(SQSH_MM_REPLAY_LINE)->Show(0);
 						_shellIconManager.GetWnd(SQSH_MM_REPLAY_BORDER)->Show(0);
@@ -808,6 +837,7 @@ int SwitchMenuBGQuant2( float, float ) {
 						wnd->Show(1);
 						_shellIconManager.Effect(effectButtonsFadeIn, wnd); //запустить разлет
 					}
+                    [[fallthrough]];
 				case SHOW_START_HIDE_SKIP_MISSION:
 				case SHOW_START_MISSION:
 					{
@@ -830,6 +860,7 @@ int SwitchMenuBGQuant2( float, float ) {
 						wnd->Show(1);
 						_shellIconManager.Effect(effectButtonsFadeIn, wnd); //запустить разлет
 					}
+                    [[fallthrough]];
 				case SHOW_CONTINUE:
 					{
 						//show continue button
@@ -868,17 +899,6 @@ int SwitchMenuScreenQuant1( float, float ) {
 					}
 				}
 				return 0;
-			} else {
-				if (_id_off == SQSH_MM_MULTIPLAYER_LOBBY_SCR && _id_on != SQSH_MM_LOADING_MISSION_SCR) {
-					gameShell->getNetClient()->FinishGame();
-/*
-					if (gameShell->getNetClient()->isHost()) {
-						gameShell->getNetClient()->StopServerAndStartFindHost();
-					} else {
-						gameShell->getNetClient()->DisconnectAndStartFindHost();
-					}
-*/
-				}
 			}
 		}
 		_shellIconManager.AddDynamicHandler(SwitchMenuBGQuant2, CBCODE_QUANT); //ждать пока не слетится BG
@@ -904,9 +924,7 @@ int SwitchMenuScreenQuant1( float, float ) {
 			}
 			switch (_id_on) {
 				case SQSH_MM_START_SCR:
-                    if (gameShell->getNetClient()) {
-                        gameShell->destroyNetClient();
-                    }
+                    gameShell->destroyNetClient();
                     //Remove last game type Multiplayer if set
                     if (gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::MULTIPLAYER) {
                         gameShell->currentSingleProfile.setLastGameType(UserSingleProfile::UNDEFINED);
@@ -960,13 +978,17 @@ int SwitchMenuScreenQuant1( float, float ) {
 					{
 						//fill mission list
 						PlayMusic( mainMenuMusic );
-						CComboWindow* diffCombo = (CComboWindow*)_shellIconManager.GetWnd(SQSH_MM_DIFFICULTY_COMBO);
-						diffCombo->pos = gameShell->currentSingleProfile.getDifficulty();
+                        int lastWinnedMissionNumber = 0;
+                        if (const Profile* profile = gameShell->currentSingleProfile.getCurrentProfile()) {
+                            CComboWindow* diffCombo = (CComboWindow*) _shellIconManager.GetWnd(
+                                    SQSH_MM_DIFFICULTY_COMBO);
+                            diffCombo->pos = profile->difficulty;
+                            lastWinnedMissionNumber = profile->lastMissionNumber;
+                        }
 						CListBoxWindow* list = (CListBoxWindow*)_shellIconManager.GetWnd(SQSH_MM_MISSION_LIST);
 						list->NewItem(1);
 						list->Clear();
 
-                        int lastWinnedMissionNumber = gameShell->currentSingleProfile.getLastMissionNumber();
                         if (lastWinnedMissionNumber >= historyScene.missionCount()) {
                             lastWinnedMissionNumber = historyScene.missionCount() - 1;
                         }
@@ -1079,12 +1101,12 @@ int SwitchMenuScreenQuant1( float, float ) {
 
 						Frame* frame = historyScene.getNomadFrame();
                         auto player = missionToExec.getActivePlayerData();
-						if (gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::SCENARIO && frame) {
+						if (frame && gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::SCENARIO) {
 							txtWnd->setText(HistoryScene::getFrameNameFromBase(frame->getName()));
 							txtWnd->colorIndex = frame->getColorIndex();
 							logoWnd->setRace(frame->getRace());
-						} else {
-						    BELLIGERENT_FACTION faction = getBelligerentFaction(player.belligerent);
+						} else if (player) {
+						    BELLIGERENT_FACTION faction = getBelligerentFaction(player->belligerent);
 							switch (faction) {
 								case EXODUS:
 									logoWnd->setRace(1);
@@ -1096,17 +1118,28 @@ int SwitchMenuScreenQuant1( float, float ) {
 								default:
 									logoWnd->setRace(0);
 							}
-							txtWnd->setText(player.name());
-							txtWnd->colorIndex = player.colorIndex;
-						}
+							txtWnd->setText(player->name());
+							txtWnd->colorIndex = player->colorIndex;
+						} else {
+                            fprintf(stderr, "No players in mission?\n");
+                            xassert(0);
+                            logoWnd->setRace(0);
+                            txtWnd->setText("???");
+                            txtWnd->colorIndex = 0;
+                        }
                         bgScene.setSkinColor(sColor4f(playerColors[txtWnd->colorIndex].unitColor));
 					}
 					break;
                 case SQSH_MM_MULTIPLAYER_LIST_SCR:
-                    {                        
+                    {
+                        printf("Loading multiplayer map descriptions\n");
+                        for (int i = 0; i < multiplayerMaps.size(); ++i) {
+                            checkMissionDescription(i, multiplayerMaps, GT_MULTI_PLAYER_CREATE);
+                        }
+                        _shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_LIST_JOIN_BTN)->Enable(0);
                         std::string name = getStringSettings(regLanName);
-                        if (name.empty() && gameShell->currentSingleProfile.getCurrentProfileIndex() != -1) {
-                            name = gameShell->currentSingleProfile.getCurrentProfile().name;
+                        if (name.empty() && gameShell->currentSingleProfile.isValidProfile()) {
+                            name = gameShell->currentSingleProfile.getCurrentProfile()->name;
                         }
                         CEditWindow* input = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_NAME_INPUT);
                         if (!name.empty()) {
@@ -1114,9 +1147,8 @@ int SwitchMenuScreenQuant1( float, float ) {
                         } else {
                             input->SetText(qdTextDB::instance().getText("Interface.Menu.EmptyName.NewPlayer"));
                         }
-                        
-                        gameShell->createNetClient();
-                        gameShell->getNetClient()->StartFindHost();
+
+                        gameShell->prepareNetClient();
                         
                         historyScene.stop();
                         StartSpace();
@@ -1166,13 +1198,20 @@ int SwitchMenuScreenQuant1( float, float ) {
                     break;
 				case SQSH_MM_MULTIPLAYER_JOIN_SCR:
 					{
-						CEditWindow* input = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_IP_INPUT);
+                        dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_PASSWORD_INPUT))->SetText("");
+                        
+                        //Fill out saved IP if any
+                        CEditWindow* input = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_IP_INPUT));
 						if (input->isEmptyText()) {
                             std::string text = getStringSettings("JoinIP");
 							input->SetText(text.c_str());
 						}
 					}
 					break;
+                case SQSH_MM_MULTIPLAYER_PASSWORD_SCR: {
+                    dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_PASSWORD_PASSWORD_INPUT))->SetText("");
+                    break;
+                }
 			}
 			//show and start effect
 			if (_id_on != SQSH_MM_SUBMIT_DIALOG_SCR) {
@@ -1254,6 +1293,7 @@ int SwitchMenuScreenQuant1( float, float ) {
 						CShellWindow* wnd = _shellIconManager.GetWnd(SQSH_MM_SKIP_MISSION_BTN);
 //						bgScene.markToPlay(wnd->m_attr->bgObject.name, wnd->m_attr->bgObject.chainName, true);
 					}
+                    [[fallthrough]];
 				case SHOW_START_HIDE_SKIP_MISSION:
 				case SHOW_START_MISSION:
 					{
@@ -1268,6 +1308,7 @@ int SwitchMenuScreenQuant1( float, float ) {
 						CShellWindow* wnd = _shellIconManager.GetWnd(SQSH_MM_SKIP_BRIEFING_BTN);
 //						bgScene.markToPlay(wnd->m_attr->bgObject.name, wnd->m_attr->bgObject.chainName, true);
 					}
+                    [[fallthrough]];
 				case SHOW_CONTINUE:
 					{
 						//show continue button
@@ -1275,6 +1316,8 @@ int SwitchMenuScreenQuant1( float, float ) {
 //						bgScene.markToPlay(wnd->m_attr->bgObject.name, wnd->m_attr->bgObject.chainName, true);
 					}
 					break;
+                default:
+                    break;
 			}
 		}
 		if (_id_on != SQSH_MM_SUBMIT_DIALOG_SCR) {
@@ -1357,6 +1400,7 @@ int SwitchMenuBGQuant1( float, float ) {
 						wnd->Show(0);
 //						bgScene.markToPlay(wnd->m_attr->bgObject.name, wnd->m_attr->bgObject.chainName, false);
 					}
+                    [[fallthrough]];
 				case SKIP_BRIEFING:
 				case SHOW_START_HIDE_SKIP_MISSION:
 					{
@@ -1454,6 +1498,7 @@ void CShellIconManager::SwitchMenuScreens(int id_off, int id_on) {
 			case SKIP_BRIEFING_AFTER_PAUSE:
 				_shellIconManager.Effect(effectButtonsFadeOut, _shellIconManager.GetWnd(SQSH_MM_CONTINUE_BRIEFING_BTN)); //запустить разлет
 				_shellIconManager.Effect(effectButtonsFadeOut, _shellIconManager.GetWnd(SQSH_MM_CONTINUE_BRIEFING_BORDER)); //запустить разлет
+                [[fallthrough]];
 			case SKIP_BRIEFING:
 				_shellIconManager.Effect(effectButtonsFadeOut, _shellIconManager.GetWnd(SQSH_MM_SKIP_BRIEFING_BORDER)); //запустить разлет
 				_shellIconManager.Effect(effectButtonsFadeOut, _shellIconManager.GetWnd(SQSH_MM_SKIP_BRIEFING_BTN)); //запустить разлет
@@ -1598,82 +1643,93 @@ void OnSplashScreenKeyLast(CShellWindow* pWnd, InterfaceEventCode code, int para
 
 //-----------------------------------
 //general
-void onMMBackButton(CShellWindow* pWnd, InterfaceEventCode code, int param) {
-	if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
-		int nShow;
-		switch ( pWnd->m_pParent->ID ) {
-			case SQSH_MM_SINGLE_SCR:
-            case SQSH_MM_MULTIPLAYER_LIST_SCR:
-            case SQSH_MM_COMMUNITY_SCR:
-            case SQSH_MM_OPTIONS_SCR:
-            case SQSH_MM_CREDITS_SCR:
-                nShow = SQSH_MM_START_SCR;
-                break;
-            case SQSH_MM_ADDONS_SCR:
-                nShow = SQSH_MM_COMMUNITY_SCR;
-                break;
-			case SQSH_MM_GAME_SCR:
-			case SQSH_MM_SOUND_SCR:
-				nShow = SQSH_MM_OPTIONS_SCR;
-				break;
-			case SQSH_MM_GRAPHICS_SCR:
-				GraphOptionsManager::getInstance().reset();
-				nShow = SQSH_MM_OPTIONS_SCR;
-				break;
-            case SQSH_MM_MULTIPLAYER_JOIN_SCR:
-            case SQSH_MM_MULTIPLAYER_LOBBY_SCR:
-				nShow = SQSH_MM_MULTIPLAYER_LIST_SCR;
-				break;
-            case SQSH_MM_MULTIPLAYER_HOST_SCR:
-                nShow = SQSH_MM_MULTIPLAYER_LOBBY_SCR;
-                break;
-			case SQSH_MM_SCENARIO_SCR:
-			case SQSH_MM_BATTLE_SCR:
-			case SQSH_MM_LOAD_SCR:
-			case SQSH_MM_LOAD_REPLAY_SCR:
-            case SQSH_MM_CONTENT_CHOOSER_SCR:
-				nShow = SQSH_MM_SINGLE_SCR;
-				break;
-			case SQSH_MM_LOAD_IN_GAME_SCR:
-			case SQSH_MM_SAVE_GAME_SCR:
-				nShow = SQSH_MM_INMISSION_SCR;
-				break;
-			case SQSH_MM_SAVE_REPLAY_SCR:
-				nShow = SQSH_MM_STATS_SCR;
-				break;
-			case SQSH_MM_PROFILE_SCR:
-				showSingleMenu(pWnd);
-				return;
-			case SQSH_MM_MISSION_TASK_SCR:
-				nShow = RESUME_GAME;
-				break;
-			case SQSH_MM_CUSTOM_SCR:
-				OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
-				nShow = SQSH_MM_GRAPHICS_SCR;
-				break;
-			case SQSH_MM_SCREEN_OPTIONS:
+
+void goToPreviousScreen(CShellWindow* pWnd, int current_screen_id) {
+    int nShow = 0;
+    switch (current_screen_id) {
+        case SQSH_MM_SINGLE_SCR:
+        case SQSH_MM_MULTIPLAYER_LIST_SCR:
+        case SQSH_MM_COMMUNITY_SCR:
+        case SQSH_MM_OPTIONS_SCR:
+        case SQSH_MM_CREDITS_SCR:
+            nShow = SQSH_MM_START_SCR;
+            break;
+        case SQSH_MM_ADDONS_SCR:
+            nShow = SQSH_MM_COMMUNITY_SCR;
+            break;
+        case SQSH_MM_GAME_SCR:
+        case SQSH_MM_SOUND_SCR:
+        case SQSH_MM_CONTROL_EDITOR_SCR:
+            nShow = SQSH_MM_OPTIONS_SCR;
+            break;
+        case SQSH_MM_GRAPHICS_SCR:
+            GraphOptionsManager::getInstance().reset();
+            nShow = SQSH_MM_OPTIONS_SCR;
+            break;
+        case SQSH_MM_MULTIPLAYER_JOIN_SCR:
+        case SQSH_MM_MULTIPLAYER_LOBBY_SCR:
+        case SQSH_MM_MULTIPLAYER_PASSWORD_SCR:
+            nShow = SQSH_MM_MULTIPLAYER_LIST_SCR;
+            break;
+        case SQSH_MM_MULTIPLAYER_HOST_SCR:
+            nShow = SQSH_MM_MULTIPLAYER_LOBBY_SCR;
+            break;
+        case SQSH_MM_SCENARIO_SCR:
+        case SQSH_MM_BATTLE_SCR:
+        case SQSH_MM_LOAD_SCR:
+        case SQSH_MM_LOAD_REPLAY_SCR:
+        case SQSH_MM_CONTENT_CHOOSER_SCR:
+            nShow = SQSH_MM_SINGLE_SCR;
+            break;
+        case SQSH_MM_LOAD_IN_GAME_SCR:
+        case SQSH_MM_SAVE_GAME_SCR:
+            nShow = SQSH_MM_INMISSION_SCR;
+            break;
+        case SQSH_MM_SAVE_REPLAY_SCR:
+            nShow = SQSH_MM_STATS_SCR;
+            break;
+        case SQSH_MM_PROFILE_SCR:
+            showSingleMenu(pWnd);
+            return;
+        case SQSH_MM_INMISSION_SCR:
+        case SQSH_MM_MISSION_TASK_SCR:
+            nShow = RESUME_GAME;
+            break;
+        case SQSH_MM_CUSTOM_SCR:
+            OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
+            nShow = SQSH_MM_GRAPHICS_SCR;
+            break;
+        case SQSH_MM_SCREEN_OPTIONS:
 //				GraphOptionsManager::getInstance().reset();
 //				extern void PerimeterDataChannelSave();
 //				PerimeterDataChannelSave();
-				nShow = SQSH_MM_INMISSION_SCR;
-				break;
-			case SQSH_MM_SCREEN_GAME:
-			case SQSH_MM_SCREEN_SOUND:
-				nShow = SQSH_MM_SCREEN_OPTIONS;
-				break;
-			case SQSH_MM_INGAME_CUSTOM_SCR:
-				OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
-				nShow = SQSH_MM_SCREEN_GRAPHICS;
-				break;
-			case SQSH_MM_SCREEN_GRAPHICS:
-				GraphOptionsManager::getInstance().reset();
-				nShow = SQSH_MM_SCREEN_OPTIONS;
-				break;
-			default:
-				return;
-		}
-		_shellIconManager.SwitchMenuScreens( pWnd->m_pParent->ID, nShow );
-	}
+            nShow = SQSH_MM_INMISSION_SCR;
+            break;
+        case SQSH_MM_SCREEN_GAME:
+        case SQSH_MM_SCREEN_SOUND:
+        case SQSH_MM_CONTROL_EDITOR_INGAME_SCR:
+            nShow = SQSH_MM_SCREEN_OPTIONS;
+            break;
+        case SQSH_MM_INGAME_CUSTOM_SCR:
+            OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
+            nShow = SQSH_MM_SCREEN_GRAPHICS;
+            break;
+        case SQSH_MM_SCREEN_GRAPHICS:
+            GraphOptionsManager::getInstance().reset();
+            nShow = SQSH_MM_SCREEN_OPTIONS;
+            break;
+        default:
+            return;
+    }
+    if (nShow != 0) {
+        _shellIconManager.SwitchMenuScreens(current_screen_id, nShow);
+    }
+}
+
+void onMMBackButton(CShellWindow* pWnd, InterfaceEventCode code, int param) {
+    if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
+        goToPreviousScreen(pWnd, pWnd->m_pParent->ID);
+    }
 }
 
 //start menu
@@ -1753,6 +1809,7 @@ void onMMQuitFromStatsButton(CShellWindow* pWnd, InterfaceEventCode code, int pa
 		HTManager::instance()->GameClose();
 //		bgScene.setEnabled(true);
 		_shellIconManager.LoadControlsGroup(SHELL_LOAD_GROUP_MENU);
+        gb_Music.Stop();
 		switch(gameShell->currentSingleProfile.getLastGameType()) {
 			case UserSingleProfile::SCENARIO:
 				_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_SCENARIO_SCR);
@@ -1762,7 +1819,7 @@ void onMMQuitFromStatsButton(CShellWindow* pWnd, InterfaceEventCode code, int pa
 				_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_BATTLE_SCR);
 				break;
 			case UserSingleProfile::MULTIPLAYER:
-				gameShell->getNetClient()->FinishGame();
+                gameShell->getNetClient()->Reset();
 				_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_MULTIPLAYER_LIST_SCR);
 				break;
 			case UserSingleProfile::REPLAY:
@@ -1846,11 +1903,6 @@ void onMMInMissRestartButton(CShellWindow* pWnd, InterfaceEventCode code, int pa
 		showMessageBox();
 	}		
 }
-void onMMInMissResumeButton(CShellWindow* pWnd, InterfaceEventCode code, int param) {
-	if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
-		_shellIconManager.SwitchMenuScreens( pWnd->m_pParent->ID, RESUME_GAME );
-	}		
-}
 void exitToInterfaceMessage(CShellWindow* pWnd) {
     int id_off = pWnd ? pWnd->m_pParent->ID : -1;
 	switch(gameShell->currentSingleProfile.getLastGameType()) {
@@ -1897,6 +1949,52 @@ void onMMInMissQuitButton(CShellWindow* pWnd, InterfaceEventCode code, int param
 		showMessageBox();
 //		exitToInterfaceMessage(pWnd);
 	}		
+}
+
+int toTerminateQuant( float, float ) {
+    if (menuChangingDone) {
+        gameShell->terminate();
+        return 0;
+    }
+    return 1;
+}
+
+int terminateAction(float, float) {
+    hideMessageBox();
+    _shellIconManager.AddDynamicHandler( toTerminateQuant, CBCODE_QUANT );
+    return 1;
+}
+
+void onGameTerminationRequest() {
+    if (gameShell->GameActive && !isShiftPressed() && terRenderDevice->GetRenderSelection() != DEVICE_HEADLESS) {
+#if 0 //def PERIMETER_DEBUG
+        //Nobody got time for this
+        gameShell->terminate();
+#else
+        //Skip on active menu transition
+        if (_bMenuMode && !menuChangingDone) {
+            return;
+        }
+        //Close cutscene if active, also cutscene causes active ID to be SQSH_MM_SUBMIT_DIALOG_SCR
+        if (gameShell->isCutSceneMode()) {
+            gameShell->setSkipCutScene(true);
+            return;
+        }
+        if (_id_on == SQSH_MM_SUBMIT_DIALOG_SCR) {
+            //Dialog open, ignore request
+            return;
+        }
+        gameShell->cancelMouseLook();
+        gameShell->prepareForInGameMenu();
+        //When game is running we want to gracefully shutdown the game by asking for quit
+        std::string text = qdTextDB::instance().getText("Interface.Menu.Messages.Confirmations.Quit");
+        setupYesNoMessageBox(terminateAction, 0, text);
+        showMessageBox();
+#endif
+    } else {
+        //Terminate it
+        gameShell->terminate();
+    }
 }
 
 //game content
@@ -2269,6 +2367,7 @@ void onMMDelSaveGameButton(CShellWindow* pWnd, InterfaceEventCode code, int para
 int delSaveReplayAction(float, float) {
 	CListBoxWindow* list = (CListBoxWindow*)_shellIconManager.GetWnd(SQSH_MM_SAVE_REPLAY_LIST);
     std::remove( replays[list->GetCurSel()].playReelPath().c_str() );
+    scan_resource_paths(convert_path_content(REPLAY_PATH));
     replays.clear();
 	loadMapVector(replays, REPLAY_PATH, "", true);
 	fillReplayList(SQSH_MM_SAVE_REPLAY_LIST, replays, SQSH_MM_SAVE_REPLAY_MAP, SQSH_MM_SAVE_REPLAY_DESCR_TXT);
@@ -2284,6 +2383,7 @@ int toSaveReplayQuant( float, float ) {
 int saveReplay(float i, float) {
 	switch ( universe()->savePlayReel(replays[i].playReelPath().c_str()) ) {
 		case terHyperSpace::SAVE_REPLAY_OK:
+            scan_resource_paths(convert_path_content(REPLAY_PATH));
 			hideMessageBox();
 			_shellIconManager.AddDynamicHandler( toSaveReplayQuant, CBCODE_QUANT );
 			break;
@@ -2363,6 +2463,7 @@ void onMMSaveReplayGoButton(CShellWindow* pWnd, InterfaceEventCode code, int par
 
 			switch ( universe()->savePlayReel(path.c_str()) ) {
 				case terHyperSpace::SAVE_REPLAY_OK:
+                    scan_resource_paths(convert_path_content(REPLAY_PATH));
 					_shellIconManager.SwitchMenuScreens( pWnd->m_pParent->ID, SQSH_MM_STATS_SCR );
 					break;
 				case terHyperSpace::SAVE_REPLAY_RW_ERROR_OR_DISK_FULL:
@@ -2454,7 +2555,7 @@ void HistoryScene::showPaused() {
 	}
 }
 void HistoryScene::showText(const std::string& text, const std::string& icon) {
-	CTextWindow* wnd = (CTextWindow*)_shellIconManager.GetWnd(SQSH_MM_BRIEFING_TXT);
+	CTextWindow* wnd = dynamic_cast<CTextWindow*>(_shellIconManager.GetWnd(SQSH_MM_BRIEFING_TXT));
 	if (wnd) {
 		wnd->setText( qdTextDB::instance().getText(text.c_str()) );
 	}
@@ -2464,6 +2565,10 @@ void HistoryScene::showText(const std::string& text, const std::string& icon) {
 	}
 }
 void HistoryScene::hideText() {
+    CShellWindow* bg = _shellIconManager.GetWnd(SQSH_MM_BRIEFING_SCROLLBG);
+    if (bg) {
+        bg->Show(0);
+    }
 	CTextWindow* wnd = dynamic_cast<CTextWindow*>(_shellIconManager.GetWnd(SQSH_MM_BRIEFING_TXT));
 	if (wnd) {
 		wnd->setText("");

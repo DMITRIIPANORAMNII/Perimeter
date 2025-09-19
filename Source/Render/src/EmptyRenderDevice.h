@@ -4,6 +4,9 @@
 
 class cEmptyRender : public cInterfaceRenderDevice
 {
+protected:
+    void DrawFieldDispatcher(class FieldDispatcher *ffd, uint8_t transparent) override { }
+    
 public:
     cEmptyRender() = default;
     ~cEmptyRender() = default;
@@ -27,7 +30,8 @@ public:
     void DrawLine(int x1,int y1,int x2,int y2,const sColor4c& color, float width) override { }
     void DrawRectangle(int x,int y,int dx,int dy,const sColor4c& color, float outline) override { }
     void FlushPrimitive2D() override { }
-    void DrawBound(const MatXf &Matrix,const Vect3f &min,const Vect3f &max,bool wireframe=0,const sColor4c& Color=sColor4c(255,255,255,255)) override { }
+    void DrawBound(const Vect3f &min,const Vect3f &max,const sColor4c& Color=sColor4c(255,255,255,255)) override { }
+    void DrawBound(const MatXf &Matrix,const Vect3f &min,const Vect3f &max,bool wireframe=false,const sColor4c& Color=sColor4c(255,255,255,255)) override { }
     void DrawLine(const Vect3f &v1,const Vect3f &v2,const sColor4c& color) override { }
     void FlushPrimitive3D() override { }
 
@@ -43,7 +47,7 @@ public:
 
 
     bool SetScreenShot(const char *fname) override { return false; }
-    uint32_t GetRenderState(eRenderStateOption option) { return 0; }
+    uint32_t GetRenderState(eRenderStateOption option) override { return 0; }
     int SetRenderState(eRenderStateOption option,uint32_t value) override { return 0; }
 
     int CreateTilemap(class cTileMap *TileMap) override { return -1; }
@@ -52,17 +56,16 @@ public:
     void DrawSprite(int x,int y,int dx,int dy,float u,float v,float du,float dv,
                             cTexture *Texture,const sColor4c& ColorMul=sColor4c(255,255,255,255),float phase=0,eBlendMode mode=ALPHA_NONE) override { }
     void DrawSprite2(int x,int y,int dx,int dy,float u,float v,float du,float dv,float u1,float v1,float du1,float dv1,
-                             cTexture *Tex1,cTexture *Tex2,const sColor4c& ColorMul=sColor4c(255,255,255,255),float phase=0,eColorMode mode=COLOR_MOD,eBlendMode blend_mode=ALPHA_NONE)	override { }
-    void DrawSprite2(int x,int y,int dx,int dy,float u,float v,float du,float dv,float u1,float v1,float du1,float dv1,
                              cTexture *Tex1,cTexture *Tex2,float lerp_factor,float alpha=1,float phase=0,eColorMode mode=COLOR_MOD,eBlendMode blend_mode=ALPHA_NONE) override { }
+    void DrawSprite3(int x, int y, int dx, int dy, float u, float v, float du, float dv, float u1, float v1, float du1, float dv1,
+                     cTexture *Tex1, cTexture *Tex2, const sColor4c& ColorMul=sColor4c(255,255,255,255), float phase=0, eColorMode mode=COLOR_MOD, eBlendMode blend_mode=ALPHA_NONE)	override { }
     
-    void Draw(class cScene *Scene) override { }
+    void DrawScene(class cScene *Scene) override { }
     
-    void Draw(class FieldDispatcher *ffd, uint8_t transparent) override { }
     void CreateFFDData(class FieldDispatcher *rd) override { }
     void DeleteFFDData(class FieldDispatcher *rd) override { }
     
-    void Draw(class ElasticSphere *es) override { }
+    void DrawElasticSphere(class ElasticSphere *es) override { }
 
     int CreateTexture(class cTexture *Texture,class cFileImage *FileImage,bool enable_assert=true) override { return 0; }
     int DeleteTexture(class cTexture *Texture) override { return 0; }
@@ -70,7 +73,8 @@ public:
     void* LockTextureRect(class cTexture* Texture, int& Pitch, Vect2i pos, Vect2i size) override { return nullptr; };
     void UnlockTexture(class cTexture *Texture) override {}
     void SetTextureImage(uint32_t slot, TextureImage* texture_image) override {}
-    uint32_t GetMaxTextureSlots() { return 0; }
+    void SetTextureTransform(uint32_t slot, const Mat4f& transform) override {}
+    uint32_t GetMaxTextureSlots() override { return 0; }
 
     void SetGlobalFog(const sColor4f &color,const Vect2f &v) override {};
     void SetGlobalLight(Vect3f *vLight, sColor4f *Ambient = nullptr,
@@ -93,10 +97,20 @@ public:
     void EndDrawShadow() override {}
     void SetSimplyMaterialShadow(cObjMesh* mesh, cTexture* texture) override {}
     void DrawNoMaterialShadow(cObjMesh* mesh) override {}
+    SurfaceImage GetShadowZBuffer() override { return SurfaceImage::NONE; };
+
+    void SetRenderTarget(cTexture* target, SurfaceImage zbuffer) override {};
+    void RestoreRenderTarget() override {};
 
     void SetMaterialTilemap(cTileMap *TileMap) override {};
     void SetMaterialTilemapShadow() override {};
     void SetTileColor(sColor4f color) override {};
+
+    bool CreateShadowTexture(int xysize) override { return false; };
+    void DeleteShadowTexture() override {};
+
+    cTexture* GetShadowMap() override { return nullptr; };
+    cTexture* GetLightMap() override { return nullptr; };
 };
 
 #endif //PERIMETER_EMPTYRENDERDEVICE_H

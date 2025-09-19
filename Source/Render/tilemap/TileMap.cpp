@@ -209,71 +209,20 @@ int cTileMap::CheckLightMapType()
 
 cTexture* cTileMap::GetShadowMap()
 {
-#ifdef PERIMETER_D3D9
-    if (gb_RenderDevice3D) {
-        if (CheckLightMapType()) {
-            return gb_RenderDevice3D->dtAdvance->GetShadowMap();
-        } else {
-            return gb_RenderDevice3D->dtFixed->GetShadowMap();
-        }
-    }
-#endif
-    return nullptr;
+	return gb_RenderDevice->GetShadowMap();
 }
-
-cTexture* cTileMap::GetLightMap()
-{
-#ifdef PERIMETER_D3D9
-    if (gb_RenderDevice3D) {
-        if (CheckLightMapType()) {
-            return gb_RenderDevice3D->dtAdvance->GetLightMap();
-        } else {
-            return gb_RenderDevice3D->dtFixed->GetLightMap();
-        }
-    }
-#endif
-    return nullptr;
-}
-
-#ifdef PERIMETER_D3D9
-IDirect3DSurface9* cTileMap::GetZBuffer()
-{
-    if (gb_RenderDevice3D) {
-        if (CheckLightMapType()) {
-            return gb_RenderDevice3D->dtAdvance->GetZBuffer();
-        } else {
-            return gb_RenderDevice3D->dtFixed->GetZBuffer();
-        }
-    }
-    return nullptr;
-}
-#endif
 
 void cTileMap::CreateLightmap()
 {
-#ifdef PERIMETER_D3D9
-    if (gb_RenderDevice3D) {
-        gb_RenderDevice3D->dtFixed->DeleteShadowTexture();
-        gb_RenderDevice3D->dtAdvance->DeleteShadowTexture();
-    }
+	gb_RenderDevice->DeleteShadowTexture();
 
-	int width=256<<(Option_DrawMeshShadow-1);
-
-	LightMapType=CheckLightMapType();
-
-	if(Option_DrawMeshShadow>0 && gb_RenderDevice3D)
-	{
-		DrawType* draw=gb_RenderDevice3D->dtFixed;
-		if(LightMapType) {
-            draw = gb_RenderDevice3D->dtAdvance;
-        }
-
-		if(!draw->CreateShadowTexture(width))
-		{
-			gb_VisGeneric->SetShadowType((eShadowType)(int)Option_ShadowType,0);
+	int width = 256 << (Option_DrawMeshShadow - 1);
+	LightMapType = CheckLightMapType();
+	if (0 < Option_DrawMeshShadow) {
+		if (!gb_RenderDevice->CreateShadowTexture(width)) {
+			gb_VisGeneric->SetShadowType((eShadowType)(int)Option_ShadowType, 0);
 		}
 	}
-#endif
 
 	float SizeLightMap=terra->SizeX();
 	float focus=1/SizeLightMap;
@@ -316,21 +265,39 @@ void cTileMap::Draw(cCamera *DrawNode)
 
 	if(DrawNode->GetAttribute(ATTRCAMERA_SHADOW))
 	{
-        gb_RenderDevice->Draw(GetScene()); // рисовать источники света
+        gb_RenderDevice->DrawScene(GetScene()); // рисовать источники света
 	}
 	else if(DrawNode->GetAttribute(ATTRCAMERA_SHADOWMAP))
 	{
 		if(Option_ShadowType==SHADOW_MAP_SELF) {
             render->DrawBump(DrawNode, ALPHA_TEST, TILEMAP_ALL, true);
         }
-	}
-	else if(DrawNode->GetAttribute(ATTRCAMERA_REFLECTION))
-	{ // рисовать отражение
-		gb_RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, ALPHATEST_GT_254/*GetRefSurface()*/);
-        render->DrawBump(DrawNode, ALPHA_TEST, TILEMAP_NOZEROPLAST, false);
-		gb_RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, ALPHATEST_GT_0);
-	}else
-	{
+	} else if(DrawNode->GetAttribute(ATTRCAMERA_REFLECTION)) {
+        //Draw tilemap reflection
+        uint32_t zfunc = gb_RenderDevice->GetRenderState(RS_ZFUNC);
+        uint32_t alpha = gb_RenderDevice->GetRenderState(RS_ALPHA_TEST_MODE);
+        
+        //Draw a bound box to set the depth buffer
+        gb_RenderDevice->SetNoMaterial(ALPHA_BLEND);
+        //Disable alpha test after setting blend mode so dx9 won't discard them
+        gb_RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, ALPHATEST_NONE);
+        int z = terra->GetHZeroPlast();
+        gb_RenderDevice->SetWorldMatXf(MatXf::ID);
+        gb_RenderDevice->DrawBound(
+                Vect3f(0, 0, static_cast<float>(z+1)), //+1 to avoid depth conflicting with zero layer
+                Vect3f(static_cast<float>(terra->SizeX()), static_cast<float>(terra->SizeY()), 0),
+                sColor4c(0,0,0,0)
+        );
+        gb_RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, alpha);
+        
+        //Draw the map reflection
+        gb_RenderDevice->SetRenderState(RS_ZFUNC, CMP_GREATEREQUAL);
+        render->DrawBump(DrawNode, ALPHA_NONE, TILEMAP_NOZEROPLAST, false);
+        gb_RenderDevice->SetRenderState(RS_ZFUNC, zfunc);
+        
+        //Remove the bound box depth so object reflections can be drawn
+        gb_RenderDevice->ClearZBuffer();
+	} else {
 		if(GetAttribute(ATTRUNKOBJ_REFLECTION)) {
 		    // рисовать прямое изображение
 			gb_RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, ALPHATEST_GT_1);
@@ -432,14 +399,9 @@ void cTileMap::SetBuffer(const Vect2i &size,int zeroplastnumber_)
 
 void cTileMap::DrawLightmapShadow(cCamera *DrawNode)
 {
-#ifdef PERIMETER_D3D9
-    if (!gb_RenderDevice3D) return;
-#else
-    return;
-#endif
 	if (Option_DrawMeshShadow && GetShadowMap()==nullptr
 #ifdef PERIMETER_D3D9
-    && gb_RenderDevice3D && gb_RenderDevice3D->nSupportTexture>1
+    && (!gb_RenderDevice3D || gb_RenderDevice3D->nSupportTexture>1)
 #endif
     ) {
 		CreateLightmap();
@@ -466,19 +428,12 @@ void cTileMap::DrawLightmapShadow(cCamera *DrawNode)
 
 void cTileMap::AddLightCamera(cCamera *DrawNode)
 {
-#ifdef PERIMETER_D3D9
-    if (!gb_RenderDevice3D) return;
-#else
-    return;
-#endif
 	DrawNode->SetAttribute(ATTRCAMERA_ZMINMAX);
 	DrawNode->SetCopy(ShadowDrawNode);
 	DrawNode->AttachChild(ShadowDrawNode);
 	ShadowDrawNode->SetAttribute(ATTRCAMERA_SHADOWMAP|ATTRUNKOBJ_NOLIGHT);
 	ShadowDrawNode->ClearAttribute(ATTRCAMERA_PERSPECTIVE|ATTRCAMERA_ZMINMAX|ATTRCAMERA_SHOWCLIP);
-#ifdef PERIMETER_D3D9
-	ShadowDrawNode->SetRenderTarget(GetShadowMap(),GetZBuffer());
-#endif
+	ShadowDrawNode->SetRenderTarget(GetShadowMap(), gb_RenderDevice->GetShadowZBuffer());
 
 
 //	Vect2f z=CalcZ(DrawNode);
@@ -690,7 +645,7 @@ void cTileMap::CalcShadowMapCameraProective(cCamera *DrawNode)
 	Vect2f Focus(1,1);
     Vect2f center(0.5f,0.5f);
     sRectangle4f clip(-0.5f,-0.5f,0.5f,0.5f);
-    Vect2f zplane(0,1000);
+    Vect2f zplane(0,1e4f);
 	ShadowDrawNode->SetFrustum(&center,&clip, &Focus, &zplane);
 	ShadowDrawNode->SetPosition(DrawNode->GetMatrix());
 
@@ -769,10 +724,10 @@ void cTileMap::AddPlanarCamera(cCamera *DrawNode,bool light)
 	PlanarNode->SetAttribute(ATTRCAMERA_SHADOW|ATTRUNKOBJ_NOLIGHT);
 	PlanarNode->ClearAttribute(ATTRCAMERA_PERSPECTIVE);
 	PlanarNode->ClearAttribute(ATTRCAMERA_SHOWCLIP);
-	PlanarNode->SetRenderTarget(light?GetLightMap():GetShadowMap(),NULL);
+	PlanarNode->SetRenderTarget(light ? gb_RenderDevice->GetLightMap() : GetShadowMap(), SurfaceImage::NONE);
     Vect2f center(0.5f,0.5f);
     sRectangle4f clip(-0.5f,-0.5f,0.5f,0.5f);
-    Vect2f zplane(10,1e6f);
+    Vect2f zplane(10,1e7f);
     PlanarNode->SetFrustum(&center,&clip, &Focus, &zplane);
 	
 	PlanarNode->SetPosition(LightMatrix);
@@ -806,10 +761,10 @@ void cTileMap::AddFixedLightCamera(cCamera *DrawNode)
 	PlanarNode->ClearAttribute(ATTRCAMERA_PERSPECTIVE);
 	PlanarNode->ClearAttribute(ATTRCAMERA_SHOWCLIP);
 	PlanarNode->SetAttribute(ATTRCAMERA_NOCLEARTARGET);
-	PlanarNode->SetRenderTarget(GetShadowMap(),NULL);
+	PlanarNode->SetRenderTarget(GetShadowMap(),SurfaceImage::NONE);
     Vect2f center(0.5f,0.5f);
     sRectangle4f clip(-0.5f,-0.5f,0.5f,0.5f);
-    Vect2f zplane(10,1e6f);
+    Vect2f zplane(10,1e7f);
     PlanarNode->SetFrustum(&center,&clip, &Focus, &zplane);
 	
 	PlanarNode->SetPosition(LightMatrix);

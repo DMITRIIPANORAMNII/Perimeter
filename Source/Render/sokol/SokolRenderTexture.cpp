@@ -4,11 +4,11 @@
 #include "Umath.h"
 #include "StdAfxRD.h"
 #include "VertexFormat.h"
-#include "sokol_gfx.h"
+#include "SokolIncludes.h"
 #include "IRenderDevice.h"
+#include "SokolResources.h"
 #include "SokolRender.h"
 #include "FileImage.h"
-#include "SokolResources.h"
 #include "RenderTracker.h"
 
 int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool enable_assert) {
@@ -17,7 +17,6 @@ int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool e
 #endif
     bool is_alpha_test = false;
     bool is_alpha_blend = false;
-    bool is_skin=Texture->skin_color.a==255;
     int dx = Texture->GetWidth();
     int dy = Texture->GetHeight();
     size_t tex_len = dx * dy * 4;
@@ -28,33 +27,54 @@ int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool e
             delete img;
             img = nullptr;
         }
-        std::string label = Texture->GetName() + std::to_string(i); 
         sg_image_desc* desc = new sg_image_desc();
-        desc->label = label.c_str();
+        desc->label = nullptr; //Added later
+        desc->render_target = false;
         desc->width = dx;
         desc->height = dy;
-        desc->wrap_u = desc->wrap_v = SG_WRAP_REPEAT;
-        desc->pixel_format = SG_PIXELFORMAT_RGBA8;
         desc->num_slices = 1;
-#ifdef SOKOL_GL
-        //TODO check why mipmaps isn't working
-        desc->num_mipmaps = 1;
-#else
         desc->num_mipmaps = std::min(static_cast<int>(SG_MAX_MIPMAPS), Texture->GetNumberMipMap());
-#endif
-        //Filter must be linear for small font textures to not look unreadable
-        desc->min_filter = 1 < desc->num_mipmaps ? SG_FILTER_LINEAR_MIPMAP_LINEAR : SG_FILTER_LINEAR;
-        desc->mag_filter = SG_FILTER_LINEAR;
 
+        switch (Texture->GetFmt()) {
+            case SURFMT_NUMBER:
+            default:
+                fprintf(stderr,
+                        "cSokolRender::CreateTexture Unknown texture format: %" PRIu32 "\n",
+                        static_cast<uint32_t>(Texture->GetFmt())
+                );
+                desc->pixel_format = SG_PIXELFORMAT_RGBA8;
+                break;
+            case SURFMT_COLOR:
+            case SURFMT_COLORALPHA:
+            case SURFMT_COLOR32:
+            case SURFMT_COLORALPHA32:
+            case SURFMT_BUMP:
+            case SURFMT_GRAYALPHA:
+            case SURFMT_UV:
+            case SURFMT_U16V16:
+                desc->pixel_format = SG_PIXELFORMAT_RGBA8;
+                break;
+            case SURFMT_RENDERMAP16:
+            case SURFMT_RENDERMAP32:
+                desc->render_target = true;
+                desc->pixel_format = SG_PIXELFORMAT_RGBA8;
+                break;
+            case SURFMT_RENDERMAP_DEPTH:
+                desc->render_target = true;
+                desc->pixel_format = SG_PIXELFORMAT_DEPTH;
+                break;
+        }
+
+        if (desc->render_target || FileImage) {
+            desc->usage = SG_USAGE_IMMUTABLE;
+        } else {
+            desc->usage = SG_USAGE_STREAM;
+        }
+        
         if (!FileImage) {
-            desc->usage = SG_USAGE_DYNAMIC;
             img = new SokolTexture2D(desc);
         } else {
-            desc->usage = SG_USAGE_IMMUTABLE;
-            std::vector<uint8_t*> buffers;
-
             uint8_t* buf = new uint8_t[tex_len];
-            buffers.push_back(buf);
             memset(buf, 0xFF, tex_len);
             //Load in RGBA
             FileImage->GetTextureRGB(buf, i * Texture->GetTimePerFrame(), 4, 4 * dx,
@@ -82,10 +102,6 @@ int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool e
                 }
             }
 
-            if (is_skin) {
-                ApplySkinColor(buf, dx, dy, Texture->skin_color);
-            }
-
             //We need to convert grayscale bumpmap to normalmap
             if (Texture->GetAttribute(TEXTURE_BUMP) && !Texture->GetAttribute(TEXTURE_NORMAL)) {
                 Texture->ConvertBumpToNormal(buf);
@@ -101,7 +117,6 @@ int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool e
                     int mmh = dy >> nMipMap;
                     size_t bufNextLen = mmw * mmh * 4;
                     uint8_t *bufNext = new uint8_t[bufNextLen];
-                    buffers.push_back(bufNext);
 
                     BuildMipMap(mmw, mmh, 4, 8 * mmw, buf, 4 * mmw, bufNext,
                                 8, 8, 8, 8,
@@ -118,12 +133,18 @@ int cSokolRender::CreateTexture(cTexture* Texture, cFileImage* FileImage, bool e
             img = new SokolTexture2D(desc);
         }
 
+        img->label = std::to_string(i);
+        if (!Texture->label.empty()) {
+            img->label = Texture->label + '_' + img->label;
+        }
+        if (!Texture->GetName().empty()) {
+            img->label = Texture->GetName() + '_' + img->label;
+        }
+
         Texture->GetFrameImage(i)->sg = img;
     }
 
-    if (is_skin) {
-        Texture->ClearAttribute(TEXTURE_ALPHA_BLEND|TEXTURE_ALPHA_TEST);
-    } else if(is_alpha_test && !is_alpha_blend) {
+    if (is_alpha_test && !is_alpha_blend) {
         Texture->ClearAttribute(TEXTURE_BLURWHITE|TEXTURE_MIPMAPBLUR|TEXTURE_ALPHA_BLEND);
         Texture->SetAttribute(TEXTURE_MIPMAP_POINT|TEXTURE_ALPHA_TEST);
     }
@@ -205,4 +226,11 @@ void cSokolRender::UnlockTexture(cTexture* Texture) {
         return;
     }
     tex->locked = false;
+}
+
+SurfaceImage cSokolRender::GetShadowZBuffer() {
+    if (!shadowMapRenderTarget) {
+        return SurfaceImage::NONE;
+    }
+    return SurfaceImage { shadowMapRenderTarget->texture->GetFrameImage(0)->sg };
 }

@@ -116,8 +116,8 @@ cMeshTri* cMeshStatic::AddMesh(std::vector<Vect3f> &Vertex, std::vector<sPolygon
 				for(int j=0;j<p.texel.size();j++,cur_vertex++)
 				{
 					sVertexXYZNT1& v=new_vertex[cur_vertex];
-					v.pos=Vertex[i];
-					*((Vect3f*)&v.n)=p.normal;
+					v.setPos(Vertex[i]);
+					p.normal.write(v.n);
 					
 					Vect2f& t=Texel[p.texel[j]];
 					v.uv[0]=t.x;
@@ -126,8 +126,8 @@ cMeshTri* cMeshStatic::AddMesh(std::vector<Vect3f> &Vertex, std::vector<sPolygon
 			}else
 			{
 				sVertexXYZNT1& v=new_vertex[cur_vertex++];
-				v.pos=Vertex[i];
-				*((Vect3f*)&v.n)=p.normal;
+				v.setPos(Vertex[i]);
+				p.normal.write(v.n);
 				
 				v.uv[0]=v.uv[1]=0;
 			}
@@ -204,7 +204,6 @@ void cMeshStatic::EndBuildMesh(bool bump)
     }
 #endif
     db.Create(n_vertex, false, n_indices, false, fmt, PT_TRIANGLES);
-    db.set_as_active = false;
 
     void* pVertex = nullptr;
     indices_t* indices = nullptr;
@@ -343,24 +342,20 @@ void cMeshBank::SetTexture(int n,cTexture * pTexture,int attr)
 {
 	VISASSERT(n>=0 && n<NUMBER_OBJTEXTURE);
 
-#ifdef PERIMETER_DEBUG_ASSERT
-    if (pTexture) {
-        std::string filetest = string_to_lower(pTexture->GetName());
-        if (filetest.find("_bump.") != std::string::npos) {
-            xassert(n == 1);
-        }
-    }
-#endif
 	bank->Material.ClearAttribute(attr);
-	if(Texture[n]) { Texture[n]->Release(); Texture[n]=0; } 
+	if (Texture[n]) {
+        Texture[n]->Release(); Texture[n]=0;
+    } 
 
-	if(n==1)
-		bank->Material.PutAttribute(MAT_BUMP,pTexture && pTexture->GetAttribute(MAT_BUMP));
+	if(n==1) {
+        bank->Material.PutAttribute(MAT_BUMP, pTexture && pTexture->GetAttribute(MAT_BUMP));
+    }
 
 	Texture[n]=pTexture;
-	if(pTexture) bank->Material.SetAttribute(attr);
-	if(n==0) 
-	{ 
+	if (pTexture) {
+        bank->Material.SetAttribute(attr);
+    }
+	if (n==0) { 
 		if(Texture[0])
 			bank->Material.SetAttribute(Texture[0]->GetAttribute(TEXTURE_ALPHA_BLEND|TEXTURE_ALPHA_TEST));
 	}
@@ -490,7 +485,7 @@ cMeshBank* cMeshBank::BuildStaticCopy()
 	return pnew;
 }
 
-cTexture* LoadTextureDef(const char* name,const char* path,const char* def_path,char* attr=NULL);
+cTexture* LoadTextureDef(const char* name,const char* path,const char* def_path,const char* attr=NULL);
 
 cTexture* TextureWithAnnoterPath(cTexture* pTexture,const char* annoter_path,const char* def_texture_path)
 {
@@ -633,8 +628,8 @@ cMeshTri* cMeshStatic::AddMesh(std::vector<Vect3f> &Vertex, std::vector<sPolygon
 		for(i=0;i<n_vertex;i++)
 		{
 			sVertexXYZNT1& v=new_vertex[i];
-			v.pos=Vertex[i];
-			v.n=Normal[i];
+			Vertex[i].write(v.pos);
+			Normal[i].write(v.n);
 			Vect2f& t=Texel[i];
 			v.uv[0]=t.x;
 			v.uv[1]=t.y;
@@ -644,8 +639,8 @@ cMeshTri* cMeshStatic::AddMesh(std::vector<Vect3f> &Vertex, std::vector<sPolygon
 		for(i=0;i<n_vertex;i++)
 		{
 			sVertexXYZNT1& v=new_vertex[i];
-			v.pos=Vertex[i];
-			v.n=Normal[i];
+			Vertex[i].write(v.pos);
+			Normal[i].write(v.n);
 			v.uv[0]=0;
 			v.uv[1]=0;
 		}

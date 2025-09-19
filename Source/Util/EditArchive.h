@@ -140,9 +140,9 @@ private:
 		static TreeNodePtr treeNode_;
 		if(!inited){
 			inited = true;
-			T t;
+			T t = T();
 			EditOArchive archive;
-			archive << WRAP_NAME(t, 0);
+			archive << WRAP_ELEMENT(t);
 			treeNode_ = const_cast<TreeNode*>(archive.rootNode());
 		}
 		if(treeNode_){
@@ -163,7 +163,7 @@ private:
     template<class T>
     struct save_non_primitive_impl {
         static void invoke(EditOArchive & ar, const T& t){
-            const_cast<T&>(t).serialize(ar);
+            const_cast<T&>(t).serialize(&ar);
         }
     };
 
@@ -269,28 +269,28 @@ private:
 	template<class T>
 	EditOArchive& operator&(const ShareHandle<T>& t)
 	{
-		return *this & WRAP_NAME(t.get(), 0);
+		return *this & WRAP_ELEMENT(t.get());
 	}
 
     template<class Enum>
 	EditOArchive& operator&(const EnumWrapper<Enum>& t)
     {
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
-		currentNode_->setValue(descriptor.nameAlt(t.value()));
-		currentNode_->setType(descriptor.typeName());
-		currentNode_->setComboList(TreeNode::COMBO, descriptor.comboListAlt());
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
+		currentNode_->setValue(descriptor->nameAlt(t.value()));
+		currentNode_->setType(descriptor->typeName());
+		currentNode_->setComboList(TreeNode::COMBO, descriptor->comboListAlt());
 		return *this;
 	}
 
     template<class Enum, class Value>
 	EditOArchive& operator&(const BitVector<Enum, Value>& t)
     {
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
-		currentNode_->setValue(descriptor.nameAltCombination(t.value()).c_str());
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
+		currentNode_->setValue(descriptor->nameAltCombination(t.value()).c_str());
 		XBuffer buf;
-		buf < "bv of " < descriptor.typeName();
+		buf < "bv of " < descriptor->typeName();
 		currentNode_->setType(buf);
-		currentNode_->setComboList(TreeNode::COMBO_MULTI, descriptor.comboListAlt());
+		currentNode_->setComboList(TreeNode::COMBO_MULTI, descriptor->comboListAlt());
 		return *this;
 	}
 
@@ -440,7 +440,7 @@ private:
     template<class T>
     struct load_non_primitive_impl {
         static void invoke(EditIArchive & ar, T & t){
-            t.serialize(ar);
+            t.serialize(&ar);
         }
     };
 
@@ -550,7 +550,7 @@ private:
 			t = 0;
 			ptr->decrRef();
 		}
-		(*this) & WRAP_NAME(ptr, 0);
+        (*this) & WRAP_ELEMENT(ptr);
 		t = ptr;
 		return *this;
 	}
@@ -558,25 +558,25 @@ private:
 	template<class Enum>
 	EditIArchive& operator&(EnumWrapper<Enum>& t)
 	{
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
 		const char* str = currentNode_->value().c_str();
-		t.value() = descriptor.keyByNameAlt(currentNode_->value().c_str());
+		t.value() = descriptor->keyByNameAlt(str);
 		return *this;
 	}
 
 	template<class Enum, class Value>
 	EditIArchive& operator&(BitVector<Enum, Value>& t)
 	{
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
 
 		XBuffer valueBuffer = currentNode_->valueBuffer();
 		
 		t.value() = (Value)0;
 		for(;;){
 			std::string name = getEnumToken(valueBuffer);
-			if(name == "")
+			if (name.empty())
 				break;
-			t.value() |= descriptor.keyByNameAlt(name.c_str());
+			t.value() |= descriptor->keyByNameAlt(name.c_str());
 		}
 		return *this;
 	}
@@ -586,7 +586,7 @@ private:
 		if(currentNode_->value() != "\\0")
 			t = currentNode_->value();
 		else
-			t = 0;
+			t = nullptr;
 		return *this;
 	}
 
@@ -628,11 +628,11 @@ public:
 
 	template<class T>
 	bool edit(T& t, const char* name = 0) { 
-    	static_cast<EditOArchive&>(*this) << WRAP_NAME(t, 0);
+    	static_cast<EditOArchive&>(*this) << WRAP_ELEMENT(t);
 		if(name) // если редактируется указатель, то имя конфликтует с его типом
 			const_cast<TreeNode*>(rootNode())->setValue(name);
 		if(edit()){
-			static_cast<EditIArchive&>(*this) >> WRAP_NAME(t, 0);
+			static_cast<EditIArchive&>(*this) >> WRAP_ELEMENT(t);
 			clear();
 			return true;
 		}
@@ -662,7 +662,7 @@ public:
 			if(!treeNode_){ 
 				Derived* t = static_cast<Derived*>(ObjectCreator<Base, Derived>::create());
 				EditOArchive archive;
-				archive << WRAP_NAME(*t, 0);
+				archive << WRAP_ELEMENT(*t);
 				treeNode_ = const_cast<TreeNode*>(archive.rootNode());
 				treeNode_->setValue(nameAlt_);
 				delete t;

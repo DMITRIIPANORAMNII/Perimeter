@@ -34,7 +34,8 @@ class Cell : public Interval
 public:
 	int y;
 	Cell *l_cw, *r_cw;
-	class Region *l_region, *r_region;
+	ShareHandle<class Region> l_region;
+    ShareHandle<class Region> r_region;
 
 	Cell() { l_region = r_region = 0; l_cw = r_cw = 0; }
 	Cell(const Interval& in, int y_) : Interval(in), y(y_) { l_region = r_region = 0; l_cw = r_cw = 0; }
@@ -53,8 +54,8 @@ class CellLine : public std::list<Cell>
 	typedef std::list<Cell> List;
 
 public:
-	CellLine() { y = 0; column_ = 0; changeCounter_ = 0; }
-	CellLine(const CellLine& line) { y = 0; column_ = 0; changeCounter_ = 0; *this = line; }
+	CellLine() : List() { y = 0; column_ = 0; changeCounter_ = 0; }
+	CellLine(const CellLine& line) : List() { y = 0; column_ = 0; changeCounter_ = 0; *this = line; }
 	CellLine& operator=(const CellLine& line);
 
 	void add(const Interval& in, Region* region = 0);
@@ -165,7 +166,7 @@ public:
 ////////////////////////////////////////////////
 //		Регион
 ////////////////////////////////////////////////
-class Region : public std::list<ShareHandle<Region> >, public ShareHandleBase
+class Region : public std::list<ShareHandle<Region>>, public ShareHandleBase
 {
 public:
 	Region();
@@ -216,7 +217,7 @@ protected:
 	void set(Cell* cell);
 	bool initSpline();
 	CellLine& cell_line(int y);
-	void append(Region* region);
+	void append(ShareHandle<Region> region);
 	void remove(Region* region);
 	void restoreSeeds(Column& column, SeedList& seeds);
 	void rasterize(Column& column);

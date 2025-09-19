@@ -1,11 +1,10 @@
 #include "StdAfx.h"
 #include "terra.h"
-#include "RigidBody.h"
-#include "ForceField.h"
 #include "Universe.h"
 #include "EditArchive.h"
 #include "XPrmArchive.h"
 #include "BinaryArchive.h"
+#include "RigidBody.h"
 
 int RigidBody::IDs;
 
@@ -95,14 +94,14 @@ void RigidBody::initPose(const Se3f& pose, bool modify_z)
 		rotation().xform(Vect3f(0, (box_max.y - box_min.y)/(2*Dy), 0), dpy);
 
 		const int shl = 12, mul = 1 << shl;
-		int p0x = xm::round(p0.x * mul), p0y = xm::round(p0.y * mul), p0z = xm::round(p0.z * mul);
+		int p0x = xm::round(p0.x * mul), p0y = xm::round(p0.y * mul);//, p0z = xm::round(p0.z * mul);
 		int dpx_x = xm::round(dpx.x * mul), dpx_y = xm::round(dpx.y * mul), dpx_z = xm::round(dpx.z * mul);
 		int dpy_x = xm::round(dpy.x * mul), dpy_y = xm::round(dpy.y * mul),	dpy_z = xm::round(dpy.z * mul);
 		int z_max = 0;
 
 		for(int y = -Dy; y <= Dy; y++)
 		{
-			int px = p0x, py = p0y, pz = p0z;
+			int px = p0x, py = p0y;//, pz = p0z;
 			for(int x = -Dx; x <= Dx; x++)
 			{
 				int z = vMap.GVBuf[vMap.offsetGBufC(px >> (shl+kmGrid),	py >> (shl+kmGrid))];
@@ -111,11 +110,11 @@ void RigidBody::initPose(const Se3f& pose, bool modify_z)
 
 				px += dpx_x;
 				py += dpx_y;
-				pz += dpx_z;
+				//pz += dpx_z;
 			}
 			p0x += dpy_x;
 			p0y += dpy_y;
-			p0z += dpy_z;
+			//p0z += dpy_z;
 		}
 
 		float positionZ = z_max;
@@ -705,7 +704,7 @@ void RigidBody::show()
 
 	if(showDebugRigidBody.wayPoints && controlled()){
 		Vect3f pos = To3D(position());
-		Vect3fList::iterator i;
+        std::vector<Vect3f>::iterator i;
 		FOR_EACH(way_points, i){
 			Vect3f p=To3D(*i);
 			show_line(pos, p, YELLOW);

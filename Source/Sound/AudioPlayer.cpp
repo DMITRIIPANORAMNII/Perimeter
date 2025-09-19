@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+#include "StdAfxSound.h"
 #include "xmath.h"
 #include "SoundInternal.h"
 #include "files/files.h"
@@ -12,6 +12,8 @@ void AudioPlayer::requestPlay(bool state) {
 }
 
 ///////////////// SoundPlayer /////////////////////////////
+
+SpeechPlayer::SpeechPlayer() = default;
 
 SpeechPlayer::~SpeechPlayer() {
     this->destroySample();
@@ -32,7 +34,8 @@ bool SpeechPlayer::OpenToPlay(const char* fname, bool cycled) {
     sample = SNDLoadSound(fname);
     if (!sample) return false;
     sample->looped = cycled; //Tecnically not need for speeches but whatever
-    sample->channel_group = SND_GROUP_SPEECH;
+    sample->channel_group = channel_group;
+    sample->global_volume_select = global_volume_select;
     sample->volume = volume;
     sample->steal_channel = true; //Just in case another speech is playing
     
@@ -77,6 +80,17 @@ void SpeechPlayer::SetVolume(float volume_) {
     sample->updateEffects();
 }
 
+void SpeechPlayer::SetVolumeSelection(GLOBAL_VOLUME selection) {
+    this->global_volume_select = selection;
+    if (!sample) return;
+    sample->global_volume_select = this->global_volume_select;
+    sample->updateEffects();
+}
+
+GLOBAL_VOLUME SpeechPlayer::GetVolumeSelection() {
+    return this->global_volume_select;
+}
+
 float SpeechPlayer::GetLen() { 
     if (!sample) return 0.0f;
     return static_cast<float>(sample->getDuration()) / 1000.0f;
@@ -88,22 +102,11 @@ float SpeechPlayer::GetLen() {
 static Mix_Music* music = nullptr;
 
 MusicPlayer::~MusicPlayer() {
-    destroyMusic();
+    Stop();
 }
-
-void MusicPlayer::destroyMusic() {
-    if (music) {
-        Stop();
-        if (SND::has_sound_init) {
-            Mix_FreeMusic(music);
-        }
-        music = nullptr;
-    }
-}
-
 
 bool MusicPlayer::OpenToPlay(const char* fname, bool cycled) {
-    this->destroyMusic();
+    this->Stop();
     
     //Library not initialized
     if(!SND::has_sound_init) {
@@ -126,7 +129,7 @@ bool MusicPlayer::OpenToPlay(const char* fname, bool cycled) {
     if (ok) {
         music_start_time = clockf();
     } else {
-        destroyMusic();
+        Stop();
         fprintf(stderr, "Mix_PlayMusic error: %s\n", Mix_GetError());
     }
     return ok;
@@ -137,10 +140,12 @@ void MusicPlayer::Stop() {
     music_pause_time = 0;
     music_faded_out_pos = 0;
     loop = false;
-    if (SND::has_sound_init && music) {
+    if (music) {
         if (Mix_PlayingMusic()) {
             Mix_HaltMusic();
         }
+        Mix_FreeMusic(music);
+        music = nullptr;
     }
 }
 

@@ -4,35 +4,30 @@
 #include "CommonEvents.h"
 
 typedef uint32_t event_size_t;
+const uint32_t NETCOM_BUFFER_PACKET_ID = 0xB1FFE90D;
+const unsigned int SIZE_NETCOM_PACKET_HEAD = sizeof(NETCOM_BUFFER_PACKET_ID) + sizeof(event_size_t) + sizeof(terEventID);
 
 class PNetCenter;
 class InOutNetComBuffer : public XBuffer 
 {
+public:
+    //Used for stats
 	size_t byte_receive;//in
 	size_t byte_sending;//out
-public:
-	terEventID event_ID;//in
 
-	event_size_t size_of_event;//in
+	terEventID event_ID;//in
 	size_t next_event_pointer;//in
-public:
 	size_t filled_size;//in
 	InOutNetComBuffer(unsigned int size, bool autoRealloc);
     InOutNetComBuffer(void* p, size_t sz);
 
 	void clearBufferOfTheProcessedCommands(void);//out
-	int send(PNetCenter& conn, NETID netid);//out
-	size_t getByteSending(){//out
-        size_t result=byte_sending;
-		byte_sending=0;
-		return result;
-	}
-	size_t getByteReceive(){
-		size_t result=byte_receive;
-		byte_receive=0;
-		return result;
-	}
+    int send(PNetCenter& conn, NETID netid);//out
 	void reset();//?
+    void reset_stats() {
+        byte_receive = 0;
+        byte_sending = 0;
+    }
 	void putNetCommand(const netCommandGeneral* event);//out
 	bool putBufferPacket(char* buf, unsigned int size);//in
 	int currentNetCommandID();//in

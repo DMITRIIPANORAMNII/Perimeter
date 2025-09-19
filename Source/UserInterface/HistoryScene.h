@@ -3,7 +3,6 @@
 #ifndef _HISTORYSCENE_H
 #define _HISTORYSCENE_H
 
-#include "AudioPlayer.h"
 #include "SCodeInterpreter/Interpreter.hpp"
 #include "SCodeInterpreter/Object3D.hpp"
 #include "Silicon.h"
@@ -17,7 +16,6 @@ class HistoryScene : public Commander {
 
 		void init(cVisGeneric* visGeneric, bool bw, bool addBlendAlpha = true);
 		void done();
-		void setupAudio();
 		void quant(const Vect2f& mousePos, float dt);
 		void preDraw();
 		void draw();
@@ -51,16 +49,15 @@ class HistoryScene : public Commander {
 
 		void setNormalSpeedMode(bool normal);
 
-		void stopAudio() {
-			interpreter->eventOccured(Controller::END_OF_AUDIO_EVENT);
-			voice.Stop();
-		}
+        void stopAudio();
 
 		void audioStopped();
 
-		bool isAudioPlaying() {
-			return voice.IsPlay();
-		}
+        bool isAudioPlaying();
+        
+        void resetAudioPosition();
+        
+        float getAudioPosition();
 
 		void onResolutionChanged();
 
@@ -155,7 +152,8 @@ class HistoryScene : public Commander {
 
 		bool bwMode;
 
-		SpeechPlayer voice;
+        uint64_t started_at = 0;
+		class SpeechPlayer* voice;
 		bool playingVoice;
 
 		std::string musicNamePath;

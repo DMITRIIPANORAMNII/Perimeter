@@ -1,25 +1,20 @@
 #ifndef PERIMETER_SAMPLE_H
 #define PERIMETER_SAMPLE_H
 
-//Mixer channel groups
-#define SND_GROUP_SPEECH 0
-#define SND_GROUP_EFFECTS 1
-#define SND_GROUP_EFFECTS_ONCE 2
-#define SND_GROUP_EFFECTS_LOOPED 3
-
-#define SND_NO_CHANNEL -1
+#include "SampleParams.h"
 
 //Wrapper for chunk that will be freed once unused
 class MixChunkWrapper {
 public:
-    Mix_Chunk* chunk = nullptr;
-    explicit MixChunkWrapper(Mix_Chunk* chunk_) : chunk(chunk_) {}
+    const std::string fileName;
+    struct Mix_Chunk* chunk = nullptr;
+    explicit MixChunkWrapper(Mix_Chunk* chunk_, const std::string& fileName_) : fileName(fileName_), chunk(chunk_) {}
     ~MixChunkWrapper();
 };
 
 //Wrapper to store certain data that will be user for mixer channels
 class SND_Sample {
-public:
+public:    
     float volume = 1.0f;
     float frequency = 1.0f;
     float pan = 0.5f; //0.0 left 0.5 center 1.0 right
@@ -31,6 +26,8 @@ public:
     bool steal_channel = false;
     ///Group to use for this sample
     int channel_group = SND_NO_CHANNEL;
+    ///Which global volume source to use
+    GLOBAL_VOLUME global_volume_select = GLOBAL_VOLUME_CHANNEL;
 
     explicit SND_Sample(const std::shared_ptr<MixChunkWrapper>& chunk);
     
@@ -46,12 +43,13 @@ public:
         this->looped = sample.looped;
         this->steal_channel = sample.steal_channel;
         this->channel_group = sample.channel_group;
+        this->global_volume_select = sample.global_volume_select;
     }
 
     ~SND_Sample();
 
     ///Loads raw data into sample and creates new chunk to hold it, assumes data is in device format
-    bool loadRawData(uint8_t* src_data, size_t src_len, bool copy);
+    bool loadRawData(uint8_t* src_data, size_t src_len, bool copy, const std::string& file_name);
 
     ///Plays provided sample as effect and returns used channel if any
     int play();

@@ -1,11 +1,8 @@
 #include "StdAfx.h"
-#include "Player.h"
-#include "RealInterpolation.h"
 #include "Universe.h"
 
 #include "Squad.h"
 #include "SecondLegion.h"
-#include "PerimeterSound.h"
 #include "Triggers.h"
 #include "AIPrm.h"
 #include "EditArchive.h"
@@ -114,9 +111,17 @@ void terUnitLegionary::AvatarQuant()
 		
 		avatar()->Show();
 		realAvatar()->setSight(SightFactor);
-		realAvatar()->setHeal(HealFactor);
-		realAvatar()->setFreeze(FreezeFactor);
-		realAvatar()->setHot(HotFactor);
+        
+        float maxFactor = 1.0f;
+        //Conductors have electro effect in mesh that becomes red when hot, mitigate this
+        const AttributeLegionary* attrs = attr();
+        if (attrs && attrs->ID == UNIT_ATTRIBUTE_CONDUCTOR) {
+            maxFactor = 0.5f;
+        }
+
+        realAvatar()->setHeal(min(HealFactor, maxFactor));
+        realAvatar()->setFreeze(min(FreezeFactor, maxFactor));
+        realAvatar()->setHot(min(HotFactor, maxFactor));
 
 		if(MoveSoundPoint){
 			MoveSoundPoint->setVolume(SpeedFactor);
@@ -300,6 +305,8 @@ void terUnitLegionary::Quant()
 
 	//bool isMoving = getSquad() && !getSquad()->noWayPoints();
 	switch(attr()->LegionType){
+        case LEGION_GROUND:
+            break;
 	case LEGION_FLYING:
 		if(!isMoving())
 			BodyPoint->setFlyingMode(1); // 0

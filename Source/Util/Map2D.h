@@ -49,8 +49,14 @@ public:
 
 	// Map coords
 	bool inside(const Vect2i& v) const { return v.x >= 0 && v.x < sizeX() && v.y >= 0 && v.y < sizeY(); }
-	T& operator()(int x, int y) { xassert(x >= 0 && x < sizeX() && y >= 0 && y < sizeY()); return map_[y*sizeX_+x]; }
-	const T& operator()(int x, int y) const { xassert(x >= 0 && x < sizeX() && y >= 0 && y < sizeY()); return map_[y*sizeX_+x]; }
+	T& operator()(int x, int y) {
+        //xassert(x >= 0 && x < sizeX() && y >= 0 && y < sizeY());
+        return map_[y*sizeX_+x];
+    }
+	const T& operator()(int x, int y) const {
+        //xassert(x >= 0 && x < sizeX() && y >= 0 && y < sizeY());
+        return map_[y*sizeX_+x];
+    }
 	T& operator()(const Vect2i& v) { return (*this)(v.x, v.y); }
 	const T& operator()(const Vect2i& v) const { return (*this)(v.x, v.y); }
 
@@ -115,7 +121,9 @@ public:
 	static Vect2i w2mCeil(const Vect2i& v) { return Vect2i(w2mCeil(v.x),w2mCeil(v.y)); }
 
 	// Map to world conversion
-	static int m2w(int x) { return x << tileSizeShl; }
+	static int m2w(int x) {
+        return x << tileSizeShl;
+    }
 	static Vect2i m2w(const Vect2i& v) { return Vect2i(m2w(v.x),m2w(v.y)); }
 
 private:

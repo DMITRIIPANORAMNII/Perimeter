@@ -51,14 +51,20 @@ public:
 
 	bool Play(PLAY play, const char* default_fname)
 	{
-		if(!terMusicEnable)
-			return false;
+		if (terMusicVolume == 0) {
+            return false;
+        }
 		const char* fname = gameShell->manualData().soundTracks[play].fileName();
-		if(fname==NULL)
-			fname=default_fname;
 
-		if(fname)
-			strMusic=fname;
+		if (!fname) {
+            fname = default_fname;
+        }
+
+		if (!fname || strMusic == fname) {
+            return false;
+        }
+            
+        strMusic = fname;
 
 		SetVolumeMusic( terMusicVolume );
 		bool b=mpeg->OpenToPlay(fname,true);
@@ -68,7 +74,9 @@ public:
 
 	void OpenWorld()
 	{
-		if(!terMusicEnable || active)return;
+		if (terMusicVolume == 0 || active) {
+            return;
+        }
 		active=true;
 		on_damage=on_cluster=INT_MIN;
 		Play(play = PLAY_CONSTRUCTION,"RESOURCE\\Music\\construction.ogg");

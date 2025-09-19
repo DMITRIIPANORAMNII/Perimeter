@@ -10,13 +10,13 @@
 #include "RenderTracker.h"
 #include "DebugUtil.h"
 #include "SystemUtil.h"
+#define RENDERUTILS_HWND_FROM_SDL_WINDOW
+#include "RenderUtils.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
 #include <windows.h>
 #define execv _execv
-//Needed for extracting HWND from SDL_Window, in Linux it gives conflict due to XErrorHandler
-#include <SDL_syswm.h>
 #include <commdlg.h>
 #endif
 
@@ -26,9 +26,7 @@ cD3DRender *gb_RenderDevice3D = nullptr;
 
 void IsDeleteAllDefaultTextures();
 
-FILE* fRD= nullptr;
-
-char* GetErrorText(HRESULT hr)
+const char* GetErrorText(HRESULT hr)
 {
     switch(hr)
     {
@@ -88,36 +86,33 @@ char* GetErrorText(HRESULT hr)
         case E_NOINTERFACE :
             return "No object interface is available. ";
         default:
-            fprintf(stderr, "Unknown D3D error: %d\n", hr);
+            fprintf(stderr, "Unknown D3D error: %" PRIi64 "\n", static_cast<int64_t>(hr));
             return "Unknown D3D error. ";
     }
 };
 
-void RDOpenLog(char *fname="RenderDevice.!!!")
+int RDWriteLog(HRESULT err,const char *exp,const char *file,int line)
 {
-#ifndef _FINAL_VERSION_
-    fRD=fopen(convert_path_content(fname, true).c_str(),"wt");
-	fprintf(fRD,"----------------- Compilation data: %s time: %s -----------------\n",__DATE__,__TIME__);
-#endif
-}
-int RDWriteLog(HRESULT err,char *exp,char *file,int line)
-{
-#ifndef _FINAL_VERSION_
-    if (fRD==nullptr) RDOpenLog();
-	fprintf(fRD,"%s line: %i - %s = 0x%X , %s\n",file,line,exp,err,GetErrorText(err));
-	fflush(fRD);
+#ifdef PERIMETER_DEBUG
+	fprintf(
+        stdout, 
+        "%s line: %i - %s = 0x%" PRIX64 " , %s\n",
+        file,line,exp,
+        static_cast<uint64_t>(err),
+        GetErrorText(err)
+    );
+	fflush(stdout);
 #endif
     return err;
 }
-void RDWriteLog(char *exp,int size)
+void RDWriteLog(const char *exp,int size)
 {
-#ifndef _FINAL_VERSION_
-    if (fRD==nullptr) RDOpenLog();
+#ifdef PERIMETER_DEBUG
 	if(size==-1)
 		size=strlen(exp);
-	fwrite(exp,size,1,fRD);
-	fprintf(fRD,"\n");
-	fflush(fRD);
+	fwrite(exp,size,1,stdout);
+	fprintf(stdout,"\n");
+	fflush(stdout);
 #endif
 }
 
@@ -204,16 +199,11 @@ int cD3DRender::Init(int xscr,int yscr,int Mode, SDL_Window* wnd, int RefreshRat
 	memset(CurrentTexture,0,sizeof(CurrentTexture));
 	memset(ArrayRenderState,0xEF,sizeof(ArrayRenderState));
 
-#ifdef _WIN32
-    //Get HWND from SDL window
-    SDL_SysWMinfo wm_info;
-    SDL_VERSION(&wm_info.version);
-    SDL_GetWindowWMInfo(sdlWindow, &wm_info);
-    
-    this->hWnd = hWndVisGeneric = wm_info.info.win.window;
-#else
-    //dxvk-native uses HWND as SDL2 window handle, so this is allowed
-    this->hWnd = static_cast<HWND>(sdl_window);
+    this->hWnd = get_hwnd_from_sdl_window(sdl_window);
+
+#ifndef _WIN32
+    //DXVK now needs DXVK_WSI_DRIVER to be set, we set SDL2 with replace=0 so that user may change it
+    setenv("DXVK_WSI_DRIVER", "SDL2", 0);
 #endif
 
 	if(!lpD3D)
@@ -247,7 +237,6 @@ int cD3DRender::Init(int xscr,int yscr,int Mode, SDL_Window* wnd, int RefreshRat
     d3dpp.SwapEffect				= D3DSWAPEFFECT_COPY;
     d3dpp.EnableAutoDepthStencil	= TRUE;
     d3dpp.Flags						= D3DPRESENTFLAG_DISCARD_DEPTHSTENCIL;
-    d3dpp.PresentationInterval		= D3DPRESENT_INTERVAL_IMMEDIATE;
 	UpdateRenderMode();
 
 	bSupportVertexShaderHardware=bSupportVertexShader=(D3DSHADER_VERSION_MAJOR(DeviceCaps.VertexShaderVersion)>=1);
@@ -346,21 +335,8 @@ int cD3DRender::Init(int xscr,int yscr,int Mode, SDL_Window* wnd, int RefreshRat
 	}
     
     gb_RenderDevice3D = this;
-    
-    //Workaround for some distros (Ubuntu?) setting window bigger than originally requested
-    //Since Steam Linux Runtime is based on ubuntu it affects there too
-    if (sdl_window && (RenderMode & RENDERDEVICE_MODE_WINDOW)) {
-        Vect2i size;
-        SDL_GetWindowSize(sdl_window, &size.x, &size.y);
-        if (size != ScreenSize) {
-            //Set correct size
-            SDL_SetWindowSize(sdl_window, ScreenSize.x, ScreenSize.y);
-            //Put on center again
-            int screen = SDL_GetWindowDisplayIndex(sdl_window);
-            int windowPos = SDL_WINDOWPOS_CENTERED_DISPLAY(screen);
-            SDL_SetWindowPosition(sdlWindow, windowPos, windowPos);
-        }
-    }
+
+    WorkaroundWindowSize();
 
     RenderSubmitEvent(RenderEvent::INIT, "D3D9 end");
 	return 0;
@@ -424,6 +400,11 @@ void cD3DRender::UpdateRenderMode()
     d3dpp.Windowed					= (RenderMode&RENDERDEVICE_MODE_WINDOW)?TRUE:FALSE;
     d3dpp.FullScreen_RefreshRateInHz= d3dpp.Windowed ? 0 : ScreenHZ;
 	d3dpp.BackBufferCount			= (d3dpp.Windowed | (RenderMode&RENDERDEVICE_MODE_ONEBACKBUFFER)) ? 1 : 2;
+    if (RenderMode & RENDERDEVICE_MODE_VSYNC) {
+        d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+    } else {
+        d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+    }
 
     //Set biggest size the window can have so we don't have to reinit render device each time user resizes the window
     d3dpp.BackBufferWidth = MaxScreenSize.x;
@@ -497,9 +478,9 @@ void cD3DRender::UpdateRenderMode()
 	else if(lpD3D->CheckDeviceFormat(Adapter,D3DDEVTYPE_HAL,d3ddm.Format,D3DUSAGE_RENDERTARGET,D3DRTYPE_TEXTURE,D3DFMT_X1R5G5B5)==0)
 		TexFmtData[SURFMT_RENDERMAP16].Set(2,5,5,5,1,10,5,0,15,D3DFMT_X1R5G5B5);
 
-	TexFmtData[SURFMT_RENDERMAP_FLOAT].Set(0,0,0,0,0,0,0,0,0,0);
+	TexFmtData[SURFMT_RENDERMAP_DEPTH].Set(0,0,0,0,0,0,0,0,0,0);
 	if(lpD3D->CheckDeviceFormat(Adapter,D3DDEVTYPE_HAL,d3ddm.Format,D3DUSAGE_RENDERTARGET,D3DRTYPE_TEXTURE,D3DFMT_R32F)==0)
-		TexFmtData[SURFMT_RENDERMAP_FLOAT].Set(0,0,0,0,0,0,0,0,0,D3DFMT_R32F);
+		TexFmtData[SURFMT_RENDERMAP_DEPTH].Set(0,0,0,0,0,0,0,0,0,D3DFMT_R32F);
 
 	{
 		if(lpD3D->CheckDeviceFormat(Adapter,D3DDEVTYPE_HAL,d3ddm.Format,0,D3DRTYPE_TEXTURE,D3DFMT_A8)==0) {
@@ -533,21 +514,47 @@ void cD3DRender::UpdateRenderMode()
     }
 }
 
+void cD3DRender::WorkaroundWindowSize() {
+    //Workaround for some distros (Ubuntu?) setting window bigger than originally requested
+    //Since Steam Linux Runtime is based on ubuntu it affects there too
+    if (sdl_window && (RenderMode & RENDERDEVICE_MODE_WINDOW)) {
+        Vect2i size;
+        SDL_GetWindowSize(sdl_window, &size.x, &size.y);
+        if (size != ScreenSize) {
+            fprintf(stdout, "%s %dx%d\n", __func__, size.x, size.y);
+            //Set correct size
+            SDL_SetWindowSize(sdl_window, ScreenSize.x, ScreenSize.y);
+            //Put on center again
+            int screen = SDL_GetWindowDisplayIndex(sdl_window);
+            int windowPos = SDL_WINDOWPOS_CENTERED_DISPLAY(screen);
+            SDL_SetWindowPosition(sdlWindow, windowPos, windowPos);
+        }
+    }
+}
+
 bool cD3DRender::ChangeSize(int xscr, int yscr, int mode)
 {
 	MTTexObjAutoLock lock;
     
     int mode_mask=RENDERDEVICE_MODE_ALPHA|RENDERDEVICE_MODE_WINDOW
-                 |RENDERDEVICE_MODE_RGB16|RENDERDEVICE_MODE_RGB32;
+                 |RENDERDEVICE_MODE_RGB16|RENDERDEVICE_MODE_RGB32
+                 |RENDERDEVICE_MODE_VSYNC;
 
     bool same_size = ScreenSize.x == xscr && ScreenSize.y == yscr;
     ScreenSize.x = xscr;
     ScreenSize.y = yscr;
     
-    if (!same_size && ((RenderMode&mode_mask) == (mode&mode_mask)) 
+    if (((RenderMode&mode_mask) == (mode&mode_mask)) 
     && ScreenSize.x <= MaxScreenSize.x && ScreenSize.y <= MaxScreenSize.y) {
         //We can change window size without reinitializing graphics
-        UpdateRenderMode();
+#ifdef PERIMETER_DEBUG
+        fprintf(stdout, "cD3DRender::ChangeSize no reinit %dx%d\n", xscr, yscr);
+#endif
+        if (!same_size) {
+            //Only do if actually same size
+            UpdateRenderMode();
+            WorkaroundWindowSize();
+        }
         return true;
     }
 
@@ -583,6 +590,8 @@ bool cD3DRender::ChangeSize(int xscr, int yscr, int mode)
         RestoreDeviceIfLost();
         result = SetFocus(false,(mode&RENDERDEVICE_MODE_RETURNERROR)?false:true);
     }
+    
+    WorkaroundWindowSize();
     
     return result;
 }
@@ -651,10 +660,8 @@ int cD3DRender::Done()
 int cD3DRender::GetClipRect(int *xmin,int *ymin,int *xmax,int *ymax)
 {
 	if (lpD3DDevice == nullptr) return -1;
-	D3DVIEWPORT9 vp;
-	RDCALL(lpD3DDevice->GetViewport(&vp));
-	*xmin=xScrMin=vp.X; *xmax=xScrMax=vp.X+vp.Width;
-	*ymin=yScrMin=vp.Y; *ymax=yScrMax=vp.Y+vp.Height;
+	*xmin=xScrMin; *xmax=xScrMax;
+	*ymin=yScrMin; *ymax=yScrMax;
 	return 0;
 }
 int cD3DRender::SetClipRect(int xmin,int ymin,int xmax,int ymax)
@@ -681,7 +688,12 @@ int cD3DRender::Fill(int r,int g,int b,int a)
 	if(lpD3DDevice==0) return -1;
 	RestoreDeviceIfLost();
 
-	D3DVIEWPORT9 vp={0,0,ScreenSize.x,ScreenSize.y,0.0f,1.0f};
+	D3DVIEWPORT9 vp={
+            0, 0,
+            static_cast<DWORD>(ScreenSize.x),
+            static_cast<DWORD>(ScreenSize.y),
+            0.0f, 1.0f
+    };
 	RDCALL(lpD3DDevice->SetViewport(&vp));
 	RDCALL(lpD3DDevice->Clear(0,NULL,D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER|((RenderMode&RENDERDEVICE_MODE_STRENCIL)?D3DCLEAR_STENCIL:0),
 		D3DCOLOR_RGBA(r,g,b,a),1,0));
@@ -942,7 +954,12 @@ int cD3DRender::BeginScene()
 		SetRenderState( D3DRS_FOGTABLEMODE,  D3DFOG_NONE ),
 		SetRenderState( D3DRS_FOGVERTEXMODE,  D3DFOG_NONE );
     
-    D3DVIEWPORT9 vp = {0,0,ScreenSize.x,ScreenSize.y,0.0f,1.0f};
+    D3DVIEWPORT9 vp = {
+            0, 0,
+            static_cast<DWORD>(ScreenSize.x),
+            static_cast<DWORD>(ScreenSize.y),
+            0.0f, 1.0f
+    };
     RDCALL(lpD3DDevice->SetViewport(&vp));
     
 	return hr;
@@ -982,13 +999,8 @@ void cD3DRender::SetGlobalLight(Vect3f *vLight,sColor4f *Ambient,sColor4f *Diffu
 	D3DLIGHT9 GlobalLight;
 	memset(&GlobalLight,0,sizeof(GlobalLight));
 	GlobalLight.Type = D3DLIGHT_DIRECTIONAL;
-	if(vLight)
-		memcpy(&GlobalLight.Direction.x,&vLight->x,sizeof(GlobalLight.Direction));
-	else {
-        Vect3f v = Vect3f(0,0,1);
-        memcpy(&GlobalLight.Direction.x, v, sizeof(GlobalLight.Direction));
-    }
-	
+    Vect3f v = Vect3f(0,0,1);
+    memcpy(&GlobalLight.Direction.x, vLight ? &vLight->x : &v.x, sizeof(GlobalLight.Direction));
 	memcpy(&GlobalLight.Ambient.r,&Ambient->r,sizeof(GlobalLight.Ambient));
 	memcpy(&GlobalLight.Diffuse.r,&Diffuse->r,sizeof(GlobalLight.Diffuse));
 	memcpy(&GlobalLight.Specular.r,&Specular->r,sizeof(GlobalLight.Specular));
@@ -1002,18 +1014,18 @@ void cD3DRender::SetGlobalLight(Vect3f *vLight,sColor4f *Ambient,sColor4f *Diffu
 	lpD3DDevice->LightEnable(0,TRUE);
 }
 uint32_t cD3DRender::GetRenderState(eRenderStateOption option) {
-
+    D3DRENDERSTATETYPE state_type = static_cast<D3DRENDERSTATETYPE>(option);
     switch (option) {
         default:
             break;
         case RS_WIREFRAME:
-            option = static_cast<eRenderStateOption>(D3DRS_FILLMODE);
+            state_type = D3DRS_FILLMODE;
             break;
         case RS_ALPHA_TEST_MODE:
-            option = static_cast<eRenderStateOption>(D3DRS_ALPHAREF);
+            state_type = D3DRS_ALPHAREF;
             break;
     }
-    uint32_t value = GetRenderState(static_cast<D3DRENDERSTATETYPE>(option));
+    uint32_t value = GetRenderState(state_type);
     switch (option) {
         default:
             break;
@@ -1120,6 +1132,7 @@ int cD3DRender::SetRenderState(eRenderStateOption option,uint32_t value)
             switch (value) {
                 default:
                     xassert(0);
+                    [[fallthrough]];
                 case CULL_CAMERA:
                     return SetRenderState(RS_CULLMODE, CameraCullMode);
                 case CULL_NONE:
@@ -1175,7 +1188,7 @@ void cD3DRender::FlushPrimitive3D() {
     FlushActiveDrawBuffer();
 }
 
-void cD3DRender::OutText(int x,int y,const char *string,int r,int g,int b,char *FontName,int size,int bold,int italic,int underline)
+void cD3DRender::OutText(int x,int y,const char *string,int r,int g,int b,const char *FontName,int size,int bold,int italic,int underline)
 {
     if(hWnd==0) return;
 #ifdef _WIN32
@@ -1248,8 +1261,6 @@ const uint32_t D3D_LOCK_FLAGS_STATIC = D3DLOCK_NOSYSLOCK | D3DLOCK_NO_DIRTY_UPDA
 const uint32_t D3D_LOCK_FLAGS_DYNAMIC = D3D_LOCK_FLAGS_STATIC | D3DLOCK_DISCARD;
 
 void cD3DRender::UpdateD3DVertexBuffer(VertexBuffer* vb, size_t len) {
-    xassert(!vb->burned);
-    vb->burned = true;
     xassert(len <= vb->data_len);
     if (!vb->d3d) {
         MTG();
@@ -1278,13 +1289,18 @@ void cD3DRender::UpdateD3DVertexBuffer(VertexBuffer* vb, size_t len) {
     void* lock_ptr = nullptr;
     uint32_t flags = vb->dynamic ? D3D_LOCK_FLAGS_DYNAMIC : D3D_LOCK_FLAGS_STATIC;
     RDCALL(vb->d3d->Lock(0, len, &lock_ptr, flags));
-    memcpy(lock_ptr, vb->data, len);
-    vb->d3d->Unlock();
+    if (lock_ptr) {
+        memcpy(lock_ptr, vb->data, len);
+        vb->d3d->Unlock();
+    } else {
+        xassert(0);
+#ifdef PERIMETER_EXODUS
+        fprintf(stderr, "D3D vertex buffer lock failed!\n");
+#endif
+    }
 }
 
 void cD3DRender::UpdateD3DIndexBuffer(IndexBuffer* ib, size_t len) {
-    xassert(!ib->burned);
-    ib->burned = true;
     xassert(len <= ib->data_len);
     if (!ib->d3d) {
         MTG();
@@ -1312,8 +1328,15 @@ void cD3DRender::UpdateD3DIndexBuffer(IndexBuffer* ib, size_t len) {
     void* lock_ptr = nullptr;
     uint32_t flags = ib->dynamic ? D3D_LOCK_FLAGS_DYNAMIC : D3D_LOCK_FLAGS_STATIC;
     RDCALL(ib->d3d->Lock(0, len, &lock_ptr, flags));
-    memcpy(lock_ptr, ib->data, len);
-    ib->d3d->Unlock();
+    if (lock_ptr) {
+        memcpy(lock_ptr, ib->data, len);
+        ib->d3d->Unlock();
+    } else {
+        xassert(0);
+#ifdef PERIMETER_EXODUS
+        fprintf(stderr, "D3D index buffer lock failed!\n");
+#endif
+    }
 }
 
 void cD3DRender::DeleteVertexBuffer(VertexBuffer &vb) {
@@ -1433,12 +1456,9 @@ void cD3DRender::SubmitBuffers(ePrimitiveType primitive, VertexBuffer* vb, size_
             xassert((range->offset + range->len) <= vertices);
             vertices = range->len;
         }
-        vertices = range ? range->len : vertices;
         xassert(0);
         RDCALL(gb_RenderDevice3D->lpD3DDevice->DrawPrimitive(d3dType, offset, vertices));
     }
-    if (vb->dynamic) vb->burned = false;
-    if (ib->dynamic) ib->burned = false;
 }
 
 void cD3DRender::SetGlobalFog(const sColor4f &color,const Vect2f &v)
@@ -1557,6 +1577,9 @@ void cD3DRender::SetBlendState(eBlendMode blend)
 
 	switch(blend)
 	{
+    case ALPHA_NONE:
+    case ALPHA_TEST:
+        break;
 	case ALPHA_SUBBLEND:
 		SetRenderState(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
 		SetRenderState(D3DRS_DESTBLEND,D3DBLEND_ONE);
@@ -1649,7 +1672,7 @@ void cD3DRender::SaveStates(const char* fname)
 {
 	FILE* f=fopen(convert_path_content(fname).c_str(),"wt");
 	fprintf(f,"Render state\n");
-#define W(s) {DWORD d;RDCALL(lpD3DDevice->GetRenderState(s,&d));fprintf(f,"%s=%x\n",#s,d); }
+#define W(s) {DWORD d;RDCALL(lpD3DDevice->GetRenderState(s,&d));fprintf(f,"%s=%" PRIX64 "\n",#s,static_cast<uint64_t>(d)); }
 	W(D3DRS_ZENABLE);
     W(D3DRS_FILLMODE);
     W(D3DRS_SHADEMODE);
@@ -1756,7 +1779,7 @@ void cD3DRender::SaveStates(const char* fname)
 #undef W
 
 	fprintf(f,"\nSampler state\n");
-#define W(i,s) {DWORD d;RDCALL(lpD3DDevice->GetSamplerState(i,s,&d));fprintf(f,"[%i]%s=%x\n",i,#s,d); }
+#define W(i,s) {DWORD d;RDCALL(lpD3DDevice->GetSamplerState(i,s,&d));fprintf(f,"[%i]%s=%" PRIX64 "\n",i,#s,static_cast<uint64_t>(d)); }
 	for(int i=0;i<4;i++)
 	{
 		W(i,D3DSAMP_ADDRESSU);
@@ -1777,7 +1800,7 @@ void cD3DRender::SaveStates(const char* fname)
 #undef W
 
 	fprintf(f,"\nTexture stage state\n");
-#define W(i,s) {DWORD d;RDCALL(lpD3DDevice->GetTextureStageState(i,s,&d));fprintf(f,"[%i]%s=%x\n",i,#s,d); }
+#define W(i,s) {DWORD d;RDCALL(lpD3DDevice->GetTextureStageState(i,s,&d));fprintf(f,"[%i]%s=%" PRIX64 "\n",i,#s,static_cast<uint64_t>(d)); }
 	int i;
 	for(i=0;i<4;i++)
 	{
@@ -1813,7 +1836,12 @@ void cD3DRender::UseOrthographicProjection() {
     RDCALL(lpD3DDevice->SetTransform(D3DTS_VIEW, reinterpret_cast<const D3DMATRIX*>(&Mat4f::ID)));
     RDCALL(lpD3DDevice->SetTransform(D3DTS_PROJECTION, reinterpret_cast<const D3DMATRIX*>(&orthoVP)));
     //SetDrawTransform may have changed viewport, set screen viewport just in case
-    D3DVIEWPORT9 vp={0,0,ScreenSize.x,ScreenSize.y,0.0f,1.0f};
+    D3DVIEWPORT9 vp={
+            0, 0,
+            static_cast<DWORD>(ScreenSize.x),
+            static_cast<DWORD>(ScreenSize.y),
+            0.0f, 1.0f
+    };
     RDCALL(lpD3DDevice->SetViewport(&vp));
 }
 

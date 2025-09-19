@@ -1,11 +1,12 @@
+#include <SDL_mixer.h>
 #include "StdAfx.h"
 #include "Mutation.h"
 #include "Runtime.h"
-#include "RigidBody.h"
 #include "terra.h"
 #include "PerimeterSound.h"
 #include "Universe.h"
 #include "Scripts/Mutation.hi"
+#include "RigidBody.h"
 
 static float volume_power = 3;
 static float Volume(float radius) { return 4./3*XM_PI*xm::pow(radius/debuScales.spheres, 3); }
@@ -243,11 +244,12 @@ void MutationProcess::show_quant()
 			case MovingIn: 
 				{
 					MTAuto lock(getLock());
-					FOR_EACH(spheres, si){
+					FOR_EACH(spheres, si) {
 						si->setTarget(center);
-						if(source.size() != 1)
-							si->setTarget(center, si->displacement.norm() - si->radius);
-						}
+						if(source.size() != 1) {
+                            si->setTarget(center, si->displacement.norm() - si->radius);
+                        }
+                    }
 					break; 
 				}
 
@@ -255,11 +257,13 @@ void MutationProcess::show_quant()
 				SND3DPlaySound("transforming_large_appear", &center);
 				FOR_EACH(spheres, si){
 					si->setTarget(center);
-					}
-				if(spheres.size() == 1)
-					phase++;
-				else
-					break;
+                }
+				if(spheres.size() == 1) {
+                    phase++;
+                } else {
+                    break;
+                }
+                [[fallthrough]];
 
 			case Separation: 
 				{
@@ -278,11 +282,12 @@ void MutationProcess::show_quant()
 					if(target.size() == 1){
 						phase++;
 						main_sphere.set(0, 0);
-						}
-					else
-						break;
+                    } else {
+                        break;
+                    }
 				}
-
+                [[fallthrough]];
+            
 			case MovingOut: {
 					MTAuto lock(getLock());
 					//SND3DPlaySound(forward ? "transforming_mid_move" : "transforming_small_move", &center);

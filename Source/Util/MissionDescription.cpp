@@ -1,11 +1,14 @@
 #include <set>
+#include <cinttypes>
 #include "StdAfx.h"
+#include "NetConnection.h"
 #include "NetPlayer.h"
 #include "EditFunctions.h"
 #include "Scripts/Config.hi"
 #include "GameContent.h"
 #include "Runtime.h"
 #include "files/files.h"
+#include "CommonEvents.h"
 
 PlayerData::PlayerData()
 {
@@ -24,11 +27,11 @@ void PlayerData::set(const std::string& name, NETID netid_, int playerIDIn, terB
 }
 
 void PlayerData::setName(const std::string& name) {
-    strncpy(playerName, name.c_str(), PLAYER_MAX_NAME_LEN);
+    strncpy(playerName, name.c_str(), PLAYER_MAX_NAME_LEN - 1);
 }
 
 void PlayerData::setNameInitial(const std::string& name) {
-    strncpy(playerNameInitial, name.c_str(), PLAYER_MAX_NAME_LEN);
+    strncpy(playerNameInitial, name.c_str(), PLAYER_MAX_NAME_LEN - 1);
 }
 
 void PlayerData::read(XBuffer& in) 
@@ -389,6 +392,7 @@ bool MissionDescription::isAllRealPlayerStartReady()
                 if (!playersData[i].flag_playerStartReady) {
                     return false;
                 }
+                [[fallthrough]];
             case REAL_PLAYER_TYPE_AI:
             case REAL_PLAYER_TYPE_PLAYER_AI:
                 players++;
@@ -403,19 +407,22 @@ bool MissionDescription::isAllRealPlayerStartReady()
 int MissionDescription::playersAmount() const 
 {
 	int cntPlayers=0;
-	for(unsigned int i=0; i<playerAmountScenarioMax; i++){
-		if(playersData[i].realPlayerType != REAL_PLAYER_TYPE_CLOSE && playersData[i].realPlayerType != REAL_PLAYER_TYPE_OPEN)
-			cntPlayers++;
+	for(unsigned int i=0; i<playerAmountScenarioMax; i++) {
+		if(playersData[i].realPlayerType != REAL_PLAYER_TYPE_CLOSE 
+        && playersData[i].realPlayerType != REAL_PLAYER_TYPE_OPEN) {
+            cntPlayers++;
+        }
 	}
 	return cntPlayers;
 }
 
-int MissionDescription::playersMaxEasily() const
+int MissionDescription::playerSlotsAvailable() const
 {
 	int cntPlayers=0;
-	for(unsigned int i=0; i<playerAmountScenarioMax; i++){
-		if(playersData[i].realPlayerType != REAL_PLAYER_TYPE_CLOSE)
-			cntPlayers++;
+	for (unsigned int i=0; i < playerAmountScenarioMax; i++) {
+		if (playersData[i].realPlayerType != REAL_PLAYER_TYPE_CLOSE) {
+            cntPlayers++;
+        }
 	}
 	return cntPlayers;
 }
@@ -663,14 +670,17 @@ bool MissionDescription::changePlayerHandicap(int playerIdx, int handicap)
     return false;
 }
 
-PlayerData& MissionDescription::getActivePlayerData() 
-{
-	for (int i = 0; i < playerAmountScenarioMax; i++) {
-		if (playersData[i].playerID == activePlayerID) {
-			return playersData[i];
-		}
-	}
-	return playersData[0];
+const PlayerData* MissionDescription::getPlayerData(int playerID) const {
+    for (int i = 0; i < playerAmountScenarioMax; i++) {
+        if (playersData[i].playerID == playerID) {
+            return &(playersData[i]);
+        }
+    }
+    return nullptr;
+}
+
+PlayerData* MissionDescription::getActivePlayerData() {
+	return const_cast<PlayerData*>(getPlayerData(activePlayerID));
 }
 
 void MissionDescription::packPlayerIDs()
@@ -695,7 +705,11 @@ void MissionDescription::setSinglePlayerDifficulty(Difficulty difficutyIn)
 
 void MissionDescription::shufflePlayers()
 {
-	shuffle(&playersShufflingIndices[0], &playersShufflingIndices[0] + playerAmountScenarioMax, std::default_random_engine(clocki()));
+	shuffle(
+        playersShufflingIndices.data(),
+        playersShufflingIndices.data() + playerAmountScenarioMax,
+        std::default_random_engine(clocki())
+    );
 }
 
 void MissionDescription::clearData() {
@@ -713,9 +727,49 @@ void MissionDescription::fitPlayerArrays() {
     }
     while (playersShufflingIndices.size() != playersData.size()) {
         if (playersShufflingIndices.size() < playersData.size()) {
-            playersShufflingIndices.emplace_back(playersShufflingIndices.size());
+            playersShufflingIndices.emplace_back(static_cast<int>(playersShufflingIndices.size()));
         } else {
             playersShufflingIndices.pop_back();
         }
     }
+}
+
+void MissionDescription::PrintInfo() const {
+    printf("==== MissionDescription ====\n");
+    printf(
+            "Path '%s' world '%s' save '%s' mission '%s' (%" PRIi32 ")\n",
+            originalSaveName.value().c_str(),
+            worldName().c_str(),
+            savePathKey().c_str(),
+            missionName().c_str(),
+            missionNumber
+    );
+    printf(
+            "GameType: %" PRIi32 "\n"
+            "Players: %" PRIi32 " max %" PRIi32 " active %" PRIi32
+            "\n",
+            gameType_,
+            playersAmount(),
+            playerAmountScenarioMax,
+            activePlayerID
+    );
+    for (auto& player : playersData) {
+        printf(
+                "-> ID %" PRIi32 " Type %" PRIu32 " NETID 0x%" PRIX64
+                " Faction %" PRIu32 " Color %" PRIi32 " Clan %" PRIi32
+                " Difficulty %" PRIu32 " HC %" PRIi32 " StartReady %" PRIi32 " GameReady %" PRIi32 " "
+                "\n",
+                player.playerID,
+                static_cast<uint32_t>(player.realPlayerType.value()),
+                player.netid,
+                static_cast<uint32_t>(player.belligerent.value()),
+                player.colorIndex,
+                player.clan,
+                static_cast<uint32_t>(player.difficulty.value()),
+                player.handicap,
+                player.flag_playerStartReady,
+                player.flag_playerGameReady
+        );
+    }
+    printf("==== ==== ==== ====\n");
 }

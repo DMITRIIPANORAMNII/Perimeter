@@ -1,36 +1,19 @@
 #include "StdAfxRD.h"
 #include "D3DRender.h"
+#include <d3dx9.h>
 #include "FileImage.h"
 #include "files/files.h"
 #include "SystemUtil.h"
 
-LPDIRECT3DTEXTURE9 cD3DRender::CreateSurface(int x, int y, eSurfaceFormat TextureFormat, int MipMap, bool enable_assert, uint32_t attribute)
+IDirect3DTexture9* cD3DRender::CreateSurface(int x, int y, eSurfaceFormat TextureFormat, int MipMap, bool enable_assert, uint32_t attribute)
 {
-	LPDIRECT3DTEXTURE9 lpTexture=0;
-
-#ifndef PERIMETER_EXODUS //We don't support DXT textures in our D3DXLoadSurfaceFromMemory
-	if((TextureFormat==SURFMT_COLOR || TextureFormat==SURFMT_COLORALPHA || TextureFormat==SURFMT_GRAYALPHA) && Option_FavoriteLoadDDS)
-	{
-		if(TextureFormat==SURFMT_GRAYALPHA)
-		{
-			RDCALL(lpD3DDevice->CreateTexture(x,y,MipMap,0,
-				D3DFMT_DXT3,
-				D3DPOOL_MANAGED,&lpTexture,NULL));
-		}else
-		{
-			RDCALL(lpD3DDevice->CreateTexture(x,y,MipMap,0,
-				(TextureFormat==SURFMT_COLOR)?D3DFMT_DXT1:D3DFMT_DXT5,
-				D3DPOOL_MANAGED,&lpTexture,NULL));
-		}
-		VISASSERT(lpTexture);
-		return lpTexture;
-	}
-#endif
+	IDirect3DTexture9* lpTexture = nullptr;
 
 	VISASSERT(x&&y&&TextureFormat>=0&&TextureFormat<SURFMT_NUMBER);
 	int Usage=0;
 	D3DPOOL Pool=D3DPOOL_MANAGED;
-	if(TextureFormat==SURFMT_RENDERMAP16 || TextureFormat==SURFMT_RENDERMAP32 || TextureFormat==SURFMT_RENDERMAP_FLOAT)
+
+	if(TextureFormat==SURFMT_RENDERMAP16 || TextureFormat==SURFMT_RENDERMAP32 || TextureFormat==SURFMT_RENDERMAP_DEPTH)
 	{
 		Usage=D3DUSAGE_RENDERTARGET;
 		Pool=D3DPOOL_DEFAULT;
@@ -75,7 +58,6 @@ int cD3DRender::CreateTexture(class cTexture *Texture,class cFileImage *FileImag
 	uint32_t dither= (RenderMode & RENDERDEVICE_MODE_RGB16) ? D3DX_FILTER_DITHER : 0;
 	bool is_alpha_test=false;
 	bool is_alpha_blend=false;
-	bool is_skin=Texture->skin_color.a==255;
 
 	for(int i=0;i<Texture->GetNumberFrame();i++) {
         IDirect3DTexture9*& tex = Texture->GetFrameImage(i)->d3d;
@@ -118,11 +100,6 @@ int cD3DRender::CreateTexture(class cTexture *Texture,class cFileImage *FileImag
             }
 		}
 
-		if(is_skin)
-		{
-			ApplySkinColor(lpBuf,dx,dy,Texture->skin_color);
-		}
-
         //We need to convert grayscale bumpmap to normalmap
         if(Texture->GetAttribute(TEXTURE_BUMP) && !Texture->GetAttribute(TEXTURE_NORMAL)) {
             Texture->ConvertBumpToNormal(lpBuf);
@@ -130,8 +107,8 @@ int cD3DRender::CreateTexture(class cTexture *Texture,class cFileImage *FileImag
 
 		RECT rect={0,0,dx,dy};
 
-		LPDIRECT3DTEXTURE9& lpD3DTexture=Texture->GetFrameImage(i)->d3d;
-		LPDIRECT3DSURFACE9 lpSurface = NULL;
+        IDirect3DTexture9*& lpD3DTexture=Texture->GetFrameImage(i)->d3d;
+        IDirect3DSurface9* lpSurface = NULL;
 		RDCALL( lpD3DTexture->GetSurfaceLevel( 0, &lpSurface ) );
 
 		RECT rect_out={0,0,dx,dy};
@@ -143,7 +120,7 @@ int cD3DRender::CreateTexture(class cTexture *Texture,class cFileImage *FileImag
 		if(Texture->GetNumberMipMap()>1) // построение мип мапов
 			for(int nMipMap=1;nMipMap<Texture->GetNumberMipMap();nMipMap++)
 			{
-				LPDIRECT3DSURFACE9 lpSurfaceNext = NULL;
+                IDirect3DSurface9* lpSurfaceNext = NULL;
 				RDCALL( lpD3DTexture->GetSurfaceLevel( nMipMap, &lpSurfaceNext ) );
 				RECT rect={0,0,dx>>nMipMap,dy>>nMipMap};
 				uint8_t *lpBufNext = new uint8_t[rect.right * rect.bottom * 4];
@@ -163,12 +140,7 @@ int cD3DRender::CreateTexture(class cTexture *Texture,class cFileImage *FileImag
 		delete[] lpBuf;
 	}
 
-	if(is_skin)
-	{
-		Texture->ClearAttribute(TEXTURE_ALPHA_BLEND|TEXTURE_ALPHA_TEST);
-	}else
-	if(is_alpha_test && !is_alpha_blend)
-	{
+	if (is_alpha_test && !is_alpha_blend) {
 		Texture->ClearAttribute(TEXTURE_BLURWHITE|TEXTURE_MIPMAPBLUR|TEXTURE_ALPHA_BLEND);
 		Texture->SetAttribute(TEXTURE_MIPMAP_POINT|TEXTURE_ALPHA_TEST);
 	}
@@ -192,7 +164,7 @@ int cD3DRender::DeleteTexture(cTexture *Texture)
 bool cD3DRender::SetScreenShot(const char *fname)
 {
 #ifdef _WIN32
-	LPDIRECT3DSURFACE9 lpRenderSurface=0;
+    IDirect3DSurface9* lpRenderSurface = nullptr;
 	RDCALL(lpD3DDevice->GetRenderTarget(0,&lpRenderSurface));
 	HRESULT hr=D3DXSaveSurfaceToFileA(fname,D3DXIFF_BMP,lpRenderSurface,NULL,NULL);
 	
@@ -252,4 +224,21 @@ void cD3DRender::SetTextureImage(uint32_t slot, TextureImage* texture_image) {
         FlushActiveDrawBuffer();
         RDCALL(lpD3DDevice->SetTexture(slot, CurrentTexture[slot] = pTexture));
     }
+}
+
+void cD3DRender::SetTextureTransform(uint32_t slot, const Mat4f& transform) {
+    VISASSERT(slot<GetMaxTextureSlots());
+    RDCALL(lpD3DDevice->SetTransform(D3DTRANSFORMSTATETYPE(D3DTS_TEXTURE0 + slot),
+                                     reinterpret_cast<const D3DMATRIX*>(&transform)));
+}
+
+IDirect3DTexture9* cD3DRender::CreateTextureFromMemory(void* pSrcData, uint32_t SrcData)
+{
+    IDirect3DTexture9* pTexture=NULL;
+    HRESULT hr=D3DXCreateTextureFromFileInMemory(lpD3DDevice,
+                                                 pSrcData,SrcData,&pTexture);
+
+    if(FAILED(hr))
+        return NULL;
+    return pTexture;
 }

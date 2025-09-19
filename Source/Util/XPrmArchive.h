@@ -104,7 +104,7 @@ private:
     template<class T>
     void saveElement(const T& t) {
         buffer_ < offset_.c_str();
-        (*this) & WRAP_NAME(t, 0);
+        (*this) & WRAP_ELEMENT(t);
         buffer_ < (binary_friendly ? "," : ",\r\n");
     }
 
@@ -120,7 +120,7 @@ private:
         static void invoke(XPrmOArchive & ar, const T & t){
 			if(!SuppressBracket<T>::value)
 				ar.openBracket();
-            const_cast<T&>(t).serialize(ar);
+            const_cast<T&>(t).serialize(&ar);
 			if(!SuppressBracket<T>::value)
 				ar.closeBracket();
         }
@@ -218,22 +218,22 @@ private:
 	template<class T>
 	XPrmOArchive& operator&(const ShareHandle<T>& t)
 	{
-		return *this & WRAP_NAME(t.get(), 0);
+		return *this & WRAP_ELEMENT(t.get());
 	}
 
     template<class Enum>
 	XPrmOArchive& operator&(const EnumWrapper<Enum>& t)
     {
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
-		saveString(descriptor.name(t.value()));
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
+		saveString(descriptor->name(t.value()));
 		return *this;
 	}
 
     template<class Enum, class Value>
 	XPrmOArchive& operator&(const BitVector<Enum, Value>& t)
     {
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
-		saveString(descriptor.nameCombination(t.value()).c_str());
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
+		saveString(descriptor->nameCombination(t.value()).c_str());
 		return *this;
 	}
 
@@ -433,7 +433,7 @@ private:
 	}
 	template<class T>
 	void loadElement(T& t) {
-		(*this) & WRAP_NAME(t, 0);
+        (*this) & WRAP_ELEMENT(t);
 		std::string name;
 		loadString(name);
 		if(name != ",")
@@ -452,7 +452,7 @@ private:
         static void invoke(XPrmIArchive& ar, T& t){
 			if(!SuppressBracket<T>::value)
 				ar.openStructure();
-            t.serialize(ar);
+            t.serialize(&ar);
 			if(!SuppressBracket<T>::value)
 				ar.closeStructure();
         }
@@ -576,7 +576,7 @@ private:
 			t = 0;
 			ptr->decrRef();
 		}
-		(*this) & WRAP_NAME(ptr, 0);
+        (*this) & WRAP_ELEMENT(ptr);
 		t = ptr;
 		return *this;
 	}
@@ -584,17 +584,17 @@ private:
 	template<class Enum>
 	XPrmIArchive& operator&(EnumWrapper<Enum>& t)
 	{
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
 		std::string str;
 		loadString(str);
-		t.value() = descriptor.keyByName(str.c_str());
+		t.value() = descriptor->keyByName(str.c_str());
 		return *this;
 	}
 
 	template<class Enum, class Value>			 
 	XPrmIArchive& operator&(BitVector<Enum, Value>& t)
 	{
-		const EnumDescriptor<Enum>& descriptor = getEnumDescriptor(Enum(0));
+		const EnumDescriptor<Enum>* descriptor = getEnumDescriptor(Enum(0));
 		t.value() = (Value)0;
 		for(;;){
 			std::string name;
@@ -605,7 +605,7 @@ private:
 			}
 			else if(name == "|")
 				continue;
-			t.value() |= descriptor.keyByName(name.c_str());
+			t.value() |= descriptor->keyByName(name.c_str());
 		}
 		return *this;
 	}

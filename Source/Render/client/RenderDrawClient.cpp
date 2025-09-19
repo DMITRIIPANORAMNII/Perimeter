@@ -62,28 +62,28 @@ void FFDData::SetIB() {
     VISASSERT(db.written_indices == GetNumIndices());
 }
 
-void cInterfaceRenderDevice::Draw(FieldDispatcher *ffd)
+void cInterfaceRenderDevice::DrawFieldDispatcher(FieldDispatcher *ffd)
 {
 	int cull=GetRenderState(RS_CULLMODE);
 	SetRenderState(RS_CULLMODE, CULL_NONE);
 
     if (DrawNode->GetCameraPass()==SCENENODE_OBJECT) {
         if (ffd->tile_global & FieldCluster::TT_OPAQUE) {
-            Draw(ffd, FieldCluster::TT_OPAQUE);
+            DrawFieldDispatcher(ffd, FieldCluster::TT_OPAQUE);
         }
 	} else {
         if (ffd->tile_global & FieldCluster::TT_TRANSPARENT_ADD) {
-            Draw(ffd, FieldCluster::TT_TRANSPARENT_ADD);
+            DrawFieldDispatcher(ffd, FieldCluster::TT_TRANSPARENT_ADD);
         }
         if (ffd->tile_global & FieldCluster::TT_TRANSPARENT_MOD) {
-            Draw(ffd, FieldCluster::TT_TRANSPARENT_MOD);
+            DrawFieldDispatcher(ffd, FieldCluster::TT_TRANSPARENT_MOD);
         }
 	}
 	
 	SetRenderState(RS_CULLMODE, cull);
 }
 
-void cInterfaceRenderDevice::Draw(FieldDispatcher *ffd, uint8_t transparent) {
+void cInterfaceRenderDevice::DrawFieldDispatcher(FieldDispatcher *ffd, uint8_t transparent) {
 //	start_timer_auto(Draw_ForceField,1);
 
 	VISASSERT(DrawNode && DrawNode->GetScene());
@@ -148,8 +148,8 @@ void cInterfaceRenderDevice::Draw(FieldDispatcher *ffd, uint8_t transparent) {
                 for (int x = 0; x <= tile_size; x++) {
                     int xm = x + x_begin;
                     int ym = y + y_begin;
-                    int xw = ffd->m2w(xm);
-                    int yw = ffd->m2w(ym);
+                    float xw = ffd->m2w(xm);
+                    float yw = ffd->m2w(ym);
                     xm = clamp(xm, 1, ffd->mapSizeX() - 2);
                     ym = clamp(ym, 1, ffd->mapSizeY() - 2);
                     const FieldDispatcher::Cell& cell = ffd->map(xm, ym);
@@ -165,8 +165,8 @@ void cInterfaceRenderDevice::Draw(FieldDispatcher *ffd, uint8_t transparent) {
                     }
                     sVertexXYZDT2& v = pv[db.lock_written_vertices];
                     db.lock_written_vertices += 1;
-                    v.pos.set(xw, yw, zw);
-                    if (cell.cluster && v.pos.z > FieldCluster::ZeroGround && cell.cluster->GetTT() == transparent) {
+                    v.setPos(xw, yw, zw);
+                    if (cell.cluster && v.z > FieldCluster::ZeroGround && cell.cluster->GetTT() == transparent) {
                         v.diffuse = ConvertColor(cell.cluster->GetColor());
                         flDraw = 1;
                     } else {

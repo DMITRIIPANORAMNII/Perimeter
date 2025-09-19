@@ -7,9 +7,11 @@
 #include "Universe.h"
 #include "UniverseInterface.h"
 #include "GameShell.h"
+#include "AudioPlayer.h"
 #include "PerimeterShellUI.h"
 #include "Controls.h"
 #include "../Sound/PerimeterSound.h"
+#include "GameContent.h"
 
 #include "CameraManager.h"
 #include "HistoryScene.h"
@@ -41,7 +43,6 @@ void OnIngameGraphicsCustomBtn(CShellWindow* pWnd, InterfaceEventCode code, int 
 		onSamplesCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_SHADOWS_SAMPLES_COMBO), EVENT_CREATEWND, -1);
 		onBumpCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_BUMP_COMBO), EVENT_CREATEWND, -1);
 		onBumpChaosCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_BUMP_CHAOS_COMBO), EVENT_CREATEWND, -1);
-		onCompressCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_COMPRESS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsFurrows(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_FURROWS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsShadows(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_SHADOWS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsReflection(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_REFLECTION_COMBO), EVENT_CREATEWND, -1);
@@ -133,7 +134,28 @@ void OnComboGraphicsUIAnchor(CShellWindow* pWnd, InterfaceEventCode code, int pa
         }
         pCombo->pos = GraphOptionsManager::getInstance().getGraphicsOptions().uiAnchor;
     } else if ( code == EVENT_UNPRESSED || code == EVENT_RUNPRESSED ) {
-        GraphOptionsManager::getInstance().getGraphicsOptions().uiAnchor = pCombo->pos;
+        if (0 <= pCombo->pos && pCombo->pos < SHELL_ANCHOR_DEFAULT) {
+            shell_anchor = static_cast<SHELL_ANCHOR>(pCombo->pos);
+            GraphOptionsManager::getInstance().getGraphicsOptions().uiAnchor = shell_anchor;
+            //Reload UI if ingame to apply new anchor positioning
+            if (gameShell && gameShell->GameActive) {
+                _shellIconManager.reloadDesktop();
+            }
+        }
+    }
+}
+
+void OnComboGraphicsVSync(CShellWindow* pWnd, InterfaceEventCode code, int param) {
+    CComboWindow *pCombo = (CComboWindow*) pWnd;
+    if ( code == EVENT_CREATEWND ) {
+        if (param != -1) {
+            pCombo->Array.emplace_back( getItemTextFromBase("Off").c_str() );
+            pCombo->Array.emplace_back( getItemTextFromBase("On").c_str() );
+            pCombo->size = pCombo->Array.size();
+        }
+        pCombo->pos = GraphOptionsManager::getInstance().getGraphicsOptions().vsyncEnable ? 1 : 0;
+    } else if ( code == EVENT_UNPRESSED || code == EVENT_RUNPRESSED ) {
+        GraphOptionsManager::getInstance().getGraphicsOptions().vsyncEnable = pCombo->pos != 0;
     }
 }
 
@@ -165,6 +187,7 @@ void OnComboGraphicsFog(CShellWindow* pWnd, InterfaceEventCode code, int param) 
     }
 }
 
+/*
 void OnComboGraphicsColorDepth(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
 	CComboWindow *pCombo = (CComboWindow*) pWnd;
@@ -179,6 +202,7 @@ void OnComboGraphicsColorDepth(CShellWindow* pWnd, InterfaceEventCode code, int 
 		GraphOptionsManager::getInstance().getGraphicsOptions().colorDepth = pCombo->pos == 0 ? 32 : 16;
 	}
 }
+*/
 
 void OnGraphicsCustomBtn(CShellWindow* pWnd, InterfaceEventCode code, int param) {
 	if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
@@ -189,7 +213,6 @@ void OnGraphicsCustomBtn(CShellWindow* pWnd, InterfaceEventCode code, int param)
 		onSamplesCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_SHADOWS_SAMPLES_COMBO), EVENT_CREATEWND, -1);
 		onBumpCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_BUMP_COMBO), EVENT_CREATEWND, -1);
 		onBumpChaosCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_BUMP_CHAOS_COMBO), EVENT_CREATEWND, -1);
-		onCompressCombo(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_COMPRESS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsFurrows(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_FURROWS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsShadows(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_SHADOWS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsReflection(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_REFLECTION_COMBO), EVENT_CREATEWND, -1);
@@ -211,7 +234,7 @@ int rejectResolutionAction(float, float) {
 			GraphOptionsManager::getInstance().reject();
 			OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
 			OnComboGraphicsResolution(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_RESOLUTION_COMBO), EVENT_CREATEWND, -1);
-			OnComboGraphicsColorDepth(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_COLORDEPTH_COMBO), EVENT_CREATEWND, -1);
+            OnComboGraphicsVSync(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_VSYNC_COMBO), EVENT_CREATEWND, -1);
 			hideMessageBox();
 		}
 		return 0;
@@ -252,8 +275,10 @@ void onLODCombo(CShellWindow* pWnd, InterfaceEventCode code, int param) {
 		if (param != -1) {
 			pCombo->Array.push_back( getItemTextFromBase("Low").c_str() );
 			pCombo->Array.push_back( getItemTextFromBase("Medium").c_str() );
-			pCombo->Array.push_back( getItemTextFromBase("High").c_str() );
-			pCombo->size = 3;
+            pCombo->Array.push_back( getItemTextFromBase("High").c_str() );
+            pCombo->Array.push_back( getItemTextFromBase("Extreme").c_str() );
+			pCombo->size = LOD_COUNT;
+            xassert(pCombo->Array.size() == pCombo->size);
 		}
 		pCombo->pos = GraphOptionsManager::getInstance().getGraphicsOptions().customOptions.landscapeDetails;
 	} else if ( code == EVENT_UNPRESSED || code == EVENT_RUNPRESSED ) {
@@ -362,19 +387,6 @@ void onBumpChaosCombo(CShellWindow* pWnd, InterfaceEventCode code, int param) {
 		GraphOptionsManager::getInstance().getGraphicsOptions().customOptions.bumpChaos = pCombo->pos;
 	}
 }
-void onCompressCombo(CShellWindow* pWnd, InterfaceEventCode code, int param) {
-	CComboWindow *pCombo = (CComboWindow*) pWnd;
-	if ( code == EVENT_CREATEWND ) {
-		if (param != -1) {
-			pCombo->Array.push_back( getItemTextFromBase("Off").c_str() );
-			pCombo->Array.push_back( getItemTextFromBase("On").c_str() );
-			pCombo->size = 2;
-		}
-		pCombo->pos = GraphOptionsManager::getInstance().getGraphicsOptions().customOptions.compressedTextures;
-	} else if ( code == EVENT_UNPRESSED || code == EVENT_RUNPRESSED ) {
-		GraphOptionsManager::getInstance().getGraphicsOptions().customOptions.compressedTextures = pCombo->pos;
-	}
-}
 
 void OnComboGraphicsFurrows(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
@@ -452,61 +464,126 @@ void OnComboGraphicsMode(CShellWindow* pWnd, InterfaceEventCode code, int param)
 }
 
 // sound
-void OnComboSoundMusic(CShellWindow* pWnd, InterfaceEventCode code, int param)
-{
-	CComboWindow *pCombo = (CComboWindow*) pWnd;
-	if( code == EVENT_CREATEWND )
-	{
-		pCombo->Array.push_back( getItemTextFromBase("Off").c_str() );
-		pCombo->Array.push_back( getItemTextFromBase("On").c_str() );
-		pCombo->size = 2;
-		pCombo->pos = terMusicEnable;
-	}
-	else if( code==EVENT_UNPRESSED || code == EVENT_RUNPRESSED )
-	{
-		InitSound(terSoundEnable, pCombo->pos, false);
-		MusicEnable( pCombo->pos );
-	}
+static SpeechPlayer* OptionSamplePlayer = nullptr;
+
+bool OptionPlaySample(GLOBAL_VOLUME global_volume, float volume, const char* path) {
+    bool started = false;
+    if (!OptionSamplePlayer) {
+        OptionSamplePlayer = new SpeechPlayer();
+        //Avoid overlapping any running speech audios
+        OptionSamplePlayer->channel_group = SND_GROUP_EFFECTS;
+    }
+    if (OptionSamplePlayer->GetVolumeSelection() != global_volume) {
+        OptionSamplePlayer->Stop();
+    }
+    OptionSamplePlayer->SetVolume(volume); //Calls updateEffects() if playing
+    if (!OptionSamplePlayer->IsPlay()) {
+        OptionSamplePlayer->SetVolumeSelection(global_volume);
+        bool ret = OptionSamplePlayer->OpenToPlay(path, false);
+        if (ret) {
+            started = true;
+        } else {
+            fprintf(stderr, "OptionPlaySample sample '%s' error\n", path);
+            xassert(0);
+        }
+    }
+    return started;
 }
-void OnComboSoundEffects(CShellWindow* pWnd, InterfaceEventCode code, int param)
-{
-	CComboWindow *pCombo = (CComboWindow*) pWnd;
-	if( code == EVENT_CREATEWND )
-	{
-		pCombo->Array.push_back( getItemTextFromBase("Off").c_str() );
-		pCombo->Array.push_back( getItemTextFromBase("On").c_str() );
-		pCombo->size = 2;
-		pCombo->pos = terSoundEnable;
-	}
-	else if ( code == EVENT_UNPRESSED || code == EVENT_RUNPRESSED )	{
-		InitSound(pCombo->pos, terMusicEnable, false);
-		historyScene.setupAudio();
-		_shellIconManager.setupAudio();
-	}
-}
+
 void OnSliderSoundVolume(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
-	CSliderWindow *pSlider = (CSliderWindow*) pWnd;
-	if( code == EVENT_SLIDERUPDATE ) {
+    CSliderWindow *pSlider = (CSliderWindow*) pWnd;
+    if ( code == EVENT_CREATEWND ) {
+        pSlider->pos = terSoundVolume;
+    } else if((code == EVENT_SLIDERUPDATE && pSlider->pos != terSoundVolume) || code == EVENT_UNPRESSED) {
         terSoundVolume = pSlider->pos;
-    } else if ( code == EVENT_UNPRESSED ) {
-        SNDSetVolume( terSoundVolume = pSlider->pos );
-        historyScene.setupAudio();
-        _shellIconManager.setupAudio();
-        SND2DPlaySound("mainmenu_clock");
-	} else if ( code == EVENT_CREATEWND ) {
-		SNDSetVolume( pSlider->pos = terSoundVolume );
-		historyScene.setupAudio();
-		_shellIconManager.setupAudio();
-	}
+        SNDSetSoundVolume(terSoundVolume);
+        OptionPlaySample(GLOBAL_VOLUME_EFFECTS, 1.0f, "Resource/Sounds/EFF/Units/Unit_Shot_Wargon.wav");
+    }
+}
+
+void OnSliderSpeechVolume(CShellWindow* pWnd, InterfaceEventCode code, int param)
+{
+    CSliderWindow *pSlider = (CSliderWindow*) pWnd;
+    if ( code == EVENT_CREATEWND ) {
+        pSlider->pos = terSpeechVolume;
+    } else if((code == EVENT_SLIDERUPDATE && pSlider->pos != terSpeechVolume) || code == EVENT_UNPRESSED) {
+        terSpeechVolume = pSlider->pos;
+        if (code == EVENT_UNPRESSED) {
+            _shellIconManager.setupAudio();
+        }
+        std::string path = getLocDataPath();
+        static int i = 0;
+        //Avoid using briefing audios in GW since different languages may have different filenames
+        //Select ET audio if only ET is selected
+        bool et = terGameContentSelect == PERIMETER_ET;
+        if (1 < i) i = 0;
+        switch (i) {
+            default:
+            case 0:
+                path += et ? "Voice/Briefings/Briefing_mission5_3.ogg"
+                           : "Voice/Tips/Mission1_5.ogg";
+                break;
+            case 1:
+                path += et ? "Voice/Tips/Mission26_1.ogg"
+                           : "Voice/Tips/Mission9_1.ogg";
+                break;
+
+        }
+        bool started = OptionPlaySample(GLOBAL_VOLUME_IGNORE, terSpeechVolume, path.c_str());
+        if (started) i++;
+    }
+}
+
+void OnSliderVoiceVolume(CShellWindow* pWnd, InterfaceEventCode code, int param)
+{
+    CSliderWindow *pSlider = (CSliderWindow*) pWnd;
+    if ( code == EVENT_CREATEWND ) {
+        pSlider->pos = terVoiceVolume;
+    } else if((code == EVENT_SLIDERUPDATE && pSlider->pos != terVoiceVolume) || code == EVENT_UNPRESSED) {
+        terVoiceVolume = pSlider->pos;
+        SNDSetVoiceVolume(terVoiceVolume);
+        std::string path = getLocDataPath();
+        static int i = 0;
+        //Skip some audios if PERIMETER_ET
+        if (terGameContentSelect == PERIMETER_ET && (i == 2 || i == 5)) {
+            i++;
+        }
+        if (5 < i) i = 0;
+        switch (i) {
+            default:
+            case 0:
+                path += "Voice/Exodus_Voice_Labor_Under_Attack.wav";
+                break;
+            case 1:
+                path += "Voice/Empire_Voice_Labor_Under_Attack.wav";
+                break;
+            case 2:
+                path += "Voice/Harkback_Voice_Labor_Under_Attack.wav";
+                break;
+            case 3:
+                path += "Voice/Exodus_Voice_Building_Under_Attack.wav";
+                break;
+            case 4:
+                path += "Voice/Empire_Voice_Building_Under_Attack.wav";
+                break;
+            case 5:
+                path += "Voice/Harkback_Voice_Building_Under_Attack.wav";
+                break;
+                
+        }
+        bool started = OptionPlaySample(GLOBAL_VOLUME_VOICE, 1.0f, path.c_str());
+        if (started) i++;
+    }
 }
 void OnSliderMusicVolume(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
 	CSliderWindow *pSlider = (CSliderWindow*) pWnd;
-	if( code == EVENT_SLIDERUPDATE )
-		SetVolumeMusic( terMusicVolume = pSlider->pos );
-	else if( code == EVENT_CREATEWND )
-		SetVolumeMusic( pSlider->pos = terMusicVolume );
+	if( code == EVENT_SLIDERUPDATE ) {
+        SetVolumeMusic(terMusicVolume = pSlider->pos);
+    } else if( code == EVENT_CREATEWND ) {
+        SetVolumeMusic(pSlider->pos = terMusicVolume);
+    }
 }
 // game
 void OnSliderAngleSens(CShellWindow* pWnd, InterfaceEventCode code, int param)
@@ -522,11 +599,12 @@ void OnSliderAngleSens(CShellWindow* pWnd, InterfaceEventCode code, int param)
 void OnSliderScrollRate(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
 	CSliderWindow *pSlider = dynamic_cast<CSliderWindow*>(pWnd);
-	if( code == EVENT_SLIDERUPDATE )
-		CAMERA_SCROLL_SPEED_DELTA = 
-		CAMERA_BORDER_SCROLL_SPEED_DELTA = 1+pSlider->pos*19.f;
-	else if( code == EVENT_CREATEWND )
-		pSlider->pos = (CAMERA_SCROLL_SPEED_DELTA-1)/19.f;
+    if (code == EVENT_SLIDERUPDATE) {
+        CAMERA_SCROLL_SPEED_DELTA = 1 + pSlider->pos * 19.f;
+        CAMERA_BORDER_SCROLL_SPEED_DELTA = CAMERA_SCROLL_SPEED_DELTA;
+    } else if (code == EVENT_CREATEWND) {
+        pSlider->pos = (CAMERA_SCROLL_SPEED_DELTA - 1) / 19.f;
+    }
 }
 
 void OnComboGameTooltips(CShellWindow* pWnd, InterfaceEventCode code, int param) {
@@ -589,7 +667,7 @@ void onMMGraphicsButton(CShellWindow* pWnd, InterfaceEventCode code, int param) 
 	if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
 		OnComboGraphicsSettings(_shellIconManager.GetWnd(SQSH_MM_SETTINGS_COMBO), EVENT_CREATEWND, -1);
 		OnComboGraphicsResolution(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_RESOLUTION_COMBO), EVENT_CREATEWND, -1);
-		OnComboGraphicsColorDepth(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_COLORDEPTH_COMBO), EVENT_CREATEWND, -1);
+		OnComboGraphicsVSync(_shellIconManager.GetWnd(SQSH_MM_GRAPHICS_VSYNC_COMBO), EVENT_CREATEWND, -1);
 		_shellIconManager.SwitchMenuScreens(pWnd->m_pParent->ID, SQSH_MM_GRAPHICS_SCR);
 	}
 }
@@ -623,10 +701,14 @@ void OnButtonOptionGraphics(CShellWindow* pWnd, InterfaceEventCode code, int par
 void OnButtonOptionSound(CShellWindow* pWnd, InterfaceEventCode code, int param)
 {
 	if(code == EVENT_UNPRESSED) {
-		CComboWindow *pCombo = (CComboWindow*) _shellIconManager.GetWnd(SQSH_MM_SOUND_SOUNDEFFECTS_COMBO);
-		pCombo->pos = terSoundEnable;
-		pCombo = (CComboWindow*) _shellIconManager.GetWnd(SQSH_MM_SOUND_MUSIC_COMBO);
-		pCombo->pos = terMusicEnable;
+        CSliderWindow* pCombo = safe_cast<CSliderWindow*>(_shellIconManager.GetWnd(SQSH_MM_SOUND_SOUNDVOLUME_SLIDER));
+		pCombo->pos = terSoundVolume;
+        pCombo = safe_cast<CSliderWindow*>(_shellIconManager.GetWnd(SQSH_MM_SOUND_MUSICVOLUME_SLIDER));
+        pCombo->pos = terMusicVolume;
+        pCombo = safe_cast<CSliderWindow*>(_shellIconManager.GetWnd(SQSH_MM_SOUND_VOICEVOLUME_SLIDER));
+        pCombo->pos = terVoiceVolume;
+        pCombo = safe_cast<CSliderWindow*>(_shellIconManager.GetWnd(SQSH_MM_SOUND_SPEECHVOLUME_SLIDER));
+        pCombo->pos = terSpeechVolume;
 
 		_shellIconManager.SwitchMenuScreens(pWnd->m_pParent->ID, SQSH_MM_SCREEN_SOUND);
 	}

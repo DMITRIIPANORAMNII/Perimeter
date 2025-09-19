@@ -3,6 +3,11 @@ name: Nix Build
 on:
   push:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 env:
   GH_CACHE_KEY: 1
@@ -24,10 +29,11 @@ jobs:
 #          {name: "Debug", flake: "_debug"},
 #        ]
 #    name: ${{matrix.target.pkg}} ${{matrix.env.name}}
+#    if: github.event.pull_request.draft != true
 #    runs-on: ${{matrix.target.on}}
 #    steps:
-#    - uses: actions/checkout@v3
-#    - uses: actions/cache@v3
+#    - uses: actions/checkout@v4
+#    - uses: actions/cache@v4
 #      id: cache
 #      with:
 #        path: /nix/store
@@ -38,9 +44,10 @@ jobs:
 #    - run: nix build ".#platform_${{matrix.target.pkg}}${{matrix.env.flake}}"
   check:
     name: Check
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v20
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}

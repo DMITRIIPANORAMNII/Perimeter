@@ -1,4 +1,7 @@
 #include "StdAfx.h"
+#include "Umath.h"
+#include "IRenderDevice.h"
+#include "IVisGeneric.h"
 #include "BGScene.h"
 #include "GameShellSq.h"
 #include "SourceUIResolution.h"
@@ -67,7 +70,7 @@ void BGScene::onResolutionChanged() {
         //This keeps aspect ratio fixed on Y axis
         float f = MAIN_MENU_RATIO / getRenderRatio();
         Vect2f focus(f, f);
-        Vect2f zplane(10.0f, 10000.0f);
+        Vect2f zplane(10.0f, 1e5f);
         camera->SetFrustum(
                 &center,								// центр камеры
                 &clip,									// видимая область камеры

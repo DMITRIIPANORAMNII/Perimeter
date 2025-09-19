@@ -11,6 +11,7 @@
 #include "xmath.h"
 #include "xbuffer.h"
 #include "xstream.h"
+#include "xerrhand.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 //Assert that types are IEEE compilant
@@ -74,6 +75,8 @@ const Vect3f Vect3f::I_  (-1,  0,  0);
 const Vect3f Vect3f::J_  ( 0, -1,  0);
 const Vect3f Vect3f::K_  ( 0,  0, -1);
 const Vect3f Vect3f::ID  ( 1,  1, 1);
+const Vect4f Vect4f::ZERO(0, 0, 0, 0);
+const Vect4f Vect4f::ID  (1, 1, 1, 1);
 
 const Mat3d Mat3d::ZERO (Vect3d::ZERO, Vect3d::ZERO);
 const Mat3d Mat3d::ID   (Vect3d(1, 1, 1), Vect3d::ZERO);
@@ -103,8 +106,15 @@ const Se3f  Se3f::ID    (QuatF::ID, Vect3f::ZERO);
 const Mat2f Mat2f::ID   (1, 0, 0, 1);
 const MatX2f MatX2f::ID   (Mat2f::ID, Vect2f::ZERO);
 
-RandomGenerator xm_random_generator;
-int RandomGenerator::operator()(){ return ((value = value*214013L + 2531011L) >> 16) & 0x7fff; }
+int RandomGenerator::operator()() {
+#if defined(PERIMETER_DEBUG_ASSERT) && defined(_PERIMETER_)
+    extern bool MT_IS_LOGIC();
+    if (logic) {
+        xassert(MT_IS_LOGIC());
+    }
+#endif
+    return ((value = value*214013L + 2531011L) >> 16) & 0x7fff;
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -457,11 +467,14 @@ Mat4f& Mat4f::postmult(const Mat4f& M)
 }
 
 bool Mat4f::eq(const Mat4f& v, float delta) const {
-    if (delta == 0) {
-        return memcmp(array, v.array, sizeof(float) * 16) == 0;
+    const float* va = &v.xx;
+    const float* a = &xx;
+    if (memcmp(a, va, sizeof(float) * 16) == 0) {
+        //Memory representation is same
+        return true;
     }
     for (int i = 0; i < 16; ++i) {
-        if (!(xm::abs(array[i] - v.array[i]) < delta)) {
+        if (!(xm::abs(a[i] - va[i]) < delta)) {
             return false;
         } 
     }

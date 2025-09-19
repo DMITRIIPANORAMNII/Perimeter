@@ -16,7 +16,7 @@ DefenceMap::DefenceMap(int hsize,int vsize)
 	path_finder->Set(defenceMapPathFind.enableSmoothing);
 
 	memcpy(path_finder2->GetWalkMap(),path_finder->GetWalkMap(),sizeX()*sizeY()*sizeof(path_finder2->GetWalkMap()[0]));
-	path_finder2->SetLater(defenceMapPathFind.enableSmoothing, defenceMapPathFind.rebuildQuants);
+	path_finder2->SetLater(&defenceMapPathFind);
 }
 
 DefenceMap::~DefenceMap()
@@ -31,7 +31,7 @@ void DefenceMap::startRecalcMap()
 	std::swap(path_finder2,path_finder);
 
 	rebuildWalkMap(path_finder2->GetWalkMap());
-	path_finder2->SetLater(defenceMapPathFind.enableSmoothing,defenceMapPathFind.rebuildQuants);
+	path_finder2->SetLater(&defenceMapPathFind);
 }
 
 bool DefenceMap::recalcMapQuant()
@@ -233,7 +233,7 @@ void DefenceMap::analizeChaos()
 	for(int y = 0; y < sizeY(); y++)
 		(*this)(0, y) = (*this)(sizeX() - 1, y) = value;
 
-	xassert(tileSize == AITileMap::tileSize);
+	xassert(tileSize == static_cast<size_t>(AITileMap::tileSize));
 	for(int y = 1; y < sizeY() - 1; y++)
 		for(int x = 1; x < sizeX() - 1; x++)
 			if(!(*ai_tile_map)(x, y).height_min)
@@ -251,7 +251,7 @@ void DefenceMap::analizeField(int playerID)
 	const uint8_t value = 64;
 
 	if(field_dispatcher){
-		xassert(FieldDispatcher::scale == tileSizeShl);
+		xassert(static_cast<size_t>(FieldDispatcher::scale) == tileSizeShl);
 
 		int delta = w2m(defenceMapPathFind.fieldExtraRadius);
 
@@ -262,7 +262,8 @@ void DefenceMap::analizeField(int playerID)
 				continue;
 
 			int yc = cluster.front().y - 1;
-			int xl, xr;
+			int xl = 0;
+            int xr = 0;
 			bool beginUp = true;
 			std::vector<FieldInterval>::iterator ii;
 			FOR_EACH(cluster, ii){

@@ -66,8 +66,6 @@ enum terEventID
 	NETCOM_ID_NEXT_QUANT,
 
 	////---
-	NETCOMC_ID_JOIN_REQUEST,
-	NETCOM_4C_ID_JOIN_RESPONSE,
 
 	NETCOM_4H_ID_REJOIN_REQUEST,
 	NETCOM_4C_ID_REJOIN_RESPONCE,
@@ -123,16 +121,28 @@ struct terEventPing : netCommandGeneral
 
 struct netCommand4G_Exit : netCommandGeneral
 {
+    enum ExitReason {
+        EXITREASON_NORMAL = 0,
+        EXITREASON_DROPPED,
+        EXITREASON_KICKED,
+    };
+
     NETID netid;
-    explicit netCommand4G_Exit(NETID netid_) : netCommandGeneral(NETCOM_4G_ID_EXIT), netid(netid_) {
+    ExitReason reason = EXITREASON_NORMAL;
+    
+    explicit netCommand4G_Exit(NETID netid_, ExitReason reason_) : netCommandGeneral(NETCOM_4G_ID_EXIT), netid(netid_), reason(reason_) {
     }
     
     explicit netCommand4G_Exit(XBuffer& in) : netCommandGeneral(NETCOM_4G_ID_EXIT) {
         in.read(&netid, sizeof(netid));
+        uint32_t tmp = 0;
+        in.read(&tmp, sizeof(tmp));
+        reason = static_cast<ExitReason>(tmp);
     }
 
     void Write(XBuffer& out) const override {
         out.write(&netid, sizeof(netid));
+        out.write(&reason, sizeof(uint32_t));
     }
 };
 
@@ -492,25 +502,29 @@ public:
 	unsigned char* pDAData_;
 };
 
+struct DesyncNotify {
+    int desync_amount = 0;
+    std::string gameID = {};
+};
+
 ///Sent from server when client is detected to be desynced
 struct netCommand4C_DesyncNotify : public netCommandGeneral {
 public:
-    int desync_amount;
-    std::string gameID;
+    DesyncNotify data = {};
 
     netCommand4C_DesyncNotify(const std::string& gameID_) : netCommandGeneral(NETCOM_4C_ID_DESYNC_NOTIFY) {
-        desync_amount = 0;
-        gameID = gameID_;
+        data.desync_amount = 0;
+        data.gameID = gameID_;
     }
 
     netCommand4C_DesyncNotify(XBuffer& in) : netCommandGeneral(NETCOM_4C_ID_DESYNC_NOTIFY) {
-        in > desync_amount;
-        in > StringInWrapper(gameID);
+        in > data.desync_amount;
+        in > StringInWrapper(data.gameID);
     }
 
     void Write(XBuffer& out) const override {
-        out < desync_amount;
-        out < StringOutWrapper(gameID);
+        out < data.desync_amount;
+        out < StringOutWrapper(data.gameID);
     };
 };
 
@@ -739,7 +753,7 @@ struct netCommand4C_ReJoinResponse : netCommandGeneral
 {
 	NETID playerNETID_;
 	NETID groupNETID_;
-	netCommand4C_JoinResponse(NETID playerNETID, NETID groupNETID) : netCommandGeneral(NETCOM_4C_ID_REJOIN_RESPONSE) {
+	netCommand4C_ReJoinResponse(NETID playerNETID, NETID groupNETID) : netCommandGeneral(NETCOM_4C_ID_REJOIN_RESPONSE) {
 		playerNETID_=playerNETID;
 		groupNETID_=groupNETID;
 	}
@@ -770,7 +784,6 @@ struct netCommandC_PlayerReady : netCommandGeneral
 		out.write(&gameCRC_, sizeof(gameCRC_));
 	}
 };
-
 
 struct NetLatencyInfo {
     //Timestamp when this info was sent, also to return for the next latency status round

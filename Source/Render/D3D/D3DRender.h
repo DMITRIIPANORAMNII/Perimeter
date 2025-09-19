@@ -1,11 +1,12 @@
 #pragma once
 
+#include <d3d9.h>
 #include "../shader/shaders.h"
 #include "DrawType.h"
 #include "VertexFormat.h"
 
-int RDWriteLog(HRESULT err,char *exp,char *file,int line);
-void RDWriteLog(char *exp,int size=-1);
+int RDWriteLog(HRESULT err,const char *exp,const char *file,int line);
+void RDWriteLog(const char *exp,int size=-1);
 
 #define RDCALL(exp)									{ HRESULT hr=exp; if(hr!=D3D_OK) RDWriteLog(hr,#exp,__FILE__,__LINE__); VISASSERT(SUCCEEDED(hr)); }
 #define RDERR(exp)									{ HRESULT hr=exp; if(hr!=D3D_OK) return RDWriteLog(hr,#exp,__FILE__,__LINE__); }
@@ -33,11 +34,12 @@ private:
     int                         xScrMin,yScrMin,xScrMax,yScrMax;
     
     bool isOrthographicProjSet = false;
+    bool WireframeMode = false;
 
     void UpdateD3DVertexBuffer(VertexBuffer* vb, size_t len);
     void UpdateD3DIndexBuffer(IndexBuffer* ib, size_t len);
     void OutText(int x,int y,const char *string,int r=255,int g=255,int b=255);
-    void OutText(int x,int y,const char *string,int r,int g,int b,char *FontName="Arial",int size=12,int bold=0,int italic=0,int underline=0);
+    void OutText(int x,int y,const char *string,int r,int g,int b,const char *FontName="Arial",int size=12,int bold=0,int italic=0,int underline=0);
 
 public:
     bool				bActiveScene;
@@ -58,7 +60,9 @@ public:
     uint32_t Adapter = 0;
     LPDIRECT3D9					lpD3D;
     LPDIRECT3DDEVICE9			lpD3DDevice;
-    LPDIRECT3DSURFACE9			lpBackBuffer,lpZBuffer;
+    IDirect3DSurface9*			lpBackBuffer;
+    //This is device's ZBuffer which is not same as DrawType ZBuffer!
+    IDirect3DSurface9*          lpZBuffer;
     D3DPRESENT_PARAMETERS		d3dpp;
     IDirect3DBaseTexture9*		CurrentTexture[TEXTURE_MAX];
     bool						bSupportVertexShader;
@@ -109,6 +113,7 @@ public:
     void* LockTextureRect(class cTexture* Texture, int& Pitch, Vect2i pos, Vect2i size) override;
 	void UnlockTexture(class cTexture *Texture) override;
     void SetTextureImage(uint32_t slot, struct TextureImage* texture_image) override;
+    void SetTextureTransform(uint32_t slot, const Mat4f& transform) override;
     uint32_t GetMaxTextureSlots() override { return nSupportTexture; }
 
 	void SetDrawNode(class cCamera *DrawNode) override;
@@ -117,7 +122,7 @@ public:
     void SetGlobalLight(Vect3f *vLight, sColor4f *Ambient = nullptr,
                         sColor4f *Diffuse = nullptr, sColor4f *Specular = nullptr) override;
 
-    void Draw(class ElasticSphere *es) override;
+    void DrawElasticSphere(class ElasticSphere *es) override;
     
     uint32_t GetRenderState(eRenderStateOption option) override;
 	int SetRenderState(eRenderStateOption option,uint32_t value) override;
@@ -153,10 +158,20 @@ public:
     void EndDrawShadow() override;
     void SetSimplyMaterialShadow(cObjMesh* mesh, cTexture* texture) override;
     void DrawNoMaterialShadow(cObjMesh* mesh) override;
+    SurfaceImage GetShadowZBuffer() override;
+
+    void SetRenderTarget(cTexture* target, SurfaceImage zbuffer) override;
+    void RestoreRenderTarget() override;
     
     void SetMaterialTilemap(cTileMap *TileMap) override;
     void SetMaterialTilemapShadow() override;
     void SetTileColor(sColor4f color) override;
+
+    bool CreateShadowTexture(int xysize) override;
+    void DeleteShadowTexture() override;
+
+    cTexture* GetShadowMap() override;
+    cTexture* GetLightMap() override;
 
     // //// cInterfaceRenderDevice impls end ////
 
@@ -171,9 +186,10 @@ public:
 
 	bool hasAdvanceDrawType(){	return dtAdvanceOriginal != NULL;}
 
+    void WorkaroundWindowSize();
 	bool SetFocus(bool wait,bool focus_error=true);
 	int KillFocus();
-	LPDIRECT3DTEXTURE9 CreateSurface(int x, int y, eSurfaceFormat TextureFormat, int MipMap, bool enable_assert, uint32_t attribute);
+	IDirect3DTexture9* CreateSurface(int x, int y, eSurfaceFormat TextureFormat, int MipMap, bool enable_assert, uint32_t attribute);
 
 	inline IDirect3DBaseTexture9* GetTextureD3D(int dwStage) {
 		VISASSERT( dwStage<nSupportTexture );
@@ -202,7 +218,7 @@ public:
 
 	FORCEINLINE void SetRenderState(D3DRENDERSTATETYPE State, unsigned int Value)
 	{
-		VISASSERT(0<=State&&State<RENDERSTATE_MAX);
+		VISASSERT(0<=State&&State<static_cast<size_t>(RENDERSTATE_MAX));
 //		DWORD value;
 //		RDCALL(lpD3DDevice->GetRenderState((D3DRENDERSTATETYPE)State,&value));
 //		VISASSERT(ArrayRenderState[State]==value || ArrayRenderState[State]==0xefefefef);
@@ -215,13 +231,13 @@ public:
 	}
 	inline uint32_t GetRenderState(D3DRENDERSTATETYPE State)
 	{
-		VISASSERT(0<=State && State<RENDERSTATE_MAX);
+        VISASSERT(0<=State&&State<static_cast<size_t>(RENDERSTATE_MAX));
 		return ArrayRenderState[State];
 	}
 	FORCEINLINE void SetTextureStageState(unsigned int Stage, D3DTEXTURESTAGESTATETYPE Type, unsigned int Value)
 	{
 		VISASSERT(Stage<TEXTURE_MAX);
-		VISASSERT(0<=Type && Type<TEXTURESTATE_MAX);
+		VISASSERT(0<=Type && Type<static_cast<size_t>(TEXTURESTATE_MAX));
 
 //		DWORD value;
 ///		RDCALL(lpD3DDevice->GetTextureStageState(Stage,(D3DTEXTURESTAGESTATETYPE)Type,&value));
@@ -242,7 +258,7 @@ public:
 	inline void SetSamplerState(uint32_t Stage, D3DSAMPLERSTATETYPE Type, uint32_t Value)
 	{
 		VISASSERT(Stage<TEXTURE_MAX);
-		VISASSERT(0<=Type && Type<SAMPLERSTATE_MAX);
+		VISASSERT(0<=Type && Type<static_cast<size_t>(SAMPLERSTATE_MAX));
 		if(ArraytSamplerState[Stage][Type]!=Value)
 		{
             FlushActiveDrawBuffer();
@@ -254,7 +270,7 @@ public:
 	inline uint32_t GetSamplerState(uint32_t Stage, D3DSAMPLERSTATETYPE Type)
 	{
 		VISASSERT(Stage<TEXTURE_MAX);
-		VISASSERT(0<=Type && Type<SAMPLERSTATE_MAX);
+		VISASSERT(0<=Type && Type<static_cast<size_t>(SAMPLERSTATE_MAX));
 		return ArraytSamplerState[Stage][Type];
 	}
 
@@ -262,30 +278,17 @@ public:
 	void SetVertexShaderConstant(int StartRegister,const Vect4f *pVect);
 	void SetPixelShaderConstant(int StartRegister,const Vect4f *pVect);
 
-	inline void SetTextureTransform(int Stage,Mat4f *matTexSpace)
+	inline void SetTextureTransformInv(int Stage,Mat4f& matTexSpace)
 	{
         FlushActiveDrawBuffer();
 		float det=1;
 		Mat4f mat,matViewInv;	// matViewWorld=matWorld*matView=matView, because matWorld==ID
 		Mat4fInverse(&matViewInv,&det,&DrawNode->matView);
-        mat = matViewInv * *matTexSpace;
-		RDCALL(lpD3DDevice->SetTransform(D3DTRANSFORMSTATETYPE(D3DTS_TEXTURE0+Stage),
-                                         reinterpret_cast<const D3DMATRIX*>(&mat)));
+        mat = matViewInv * matTexSpace;
+        SetTextureTransform(Stage, mat);
 	}
 
-	void SetRenderTarget(cTexture* target,LPDIRECT3DSURFACE9 pZBuffer);
-	void RestoreRenderTarget();
-
-	LPDIRECT3DTEXTURE9 CreateTextureFromMemory(void* pSrcData, uint32_t SrcData)
-	{
-		LPDIRECT3DTEXTURE9 pTexture=NULL;
-		HRESULT hr=D3DXCreateTextureFromFileInMemory(lpD3DDevice,
-			pSrcData,SrcData,&pTexture);
-
-		if(FAILED(hr))
-			return NULL;
-		return pTexture;
-	}
+    IDirect3DTexture9* CreateTextureFromMemory(void* pSrcData, uint32_t SrcData);
 
 	void RestoreShader();
 

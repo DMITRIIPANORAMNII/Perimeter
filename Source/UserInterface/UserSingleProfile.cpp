@@ -17,26 +17,30 @@ std::string getMissionNumberKey() {
 }
 
 UserSingleProfile::UserSingleProfile() :
-		currentMissionNumber(-1),
 		currentProfileIndex(-1),
-		result(UNIVERSE_INTERFACE_MESSAGE_GAME_RESULT_UNDEFINED),
-		lastType(UNDEFINED) {
+        currentMissionNumber(-1),
+		lastType(UNDEFINED),
+        result(UNIVERSE_INTERFACE_MESSAGE_GAME_RESULT_UNDEFINED) {
 }
 void UserSingleProfile::setDifficulty(Difficulty newDifficulty) {
+    if (!isValidProfile()) return;
 	profiles[currentProfileIndex].difficulty = newDifficulty;
 	std::string path = getProfileIniPath(currentProfileIndex);
 	IniManager man( path.c_str(), true );
 	man.putInt("General", "difficulty", newDifficulty);
+    man.save();
 }
 void UserSingleProfile::setCurrentMissionNumber(int newMissionNumber) {
 	currentMissionNumber = newMissionNumber;
 	//save();
 }
 void UserSingleProfile::setLastMissionNumber(int newMissionNumber) {
+    if (!isValidProfile()) return;
 	profiles[currentProfileIndex].lastMissionNumber = newMissionNumber;
 	std::string path = getProfileIniPath(currentProfileIndex);
 	IniManager man( path.c_str(), true );
 	man.putInt("General", getMissionNumberKey().c_str(), newMissionNumber);
+    man.save();
 }
 
 void UserSingleProfile::scanProfiles() {
@@ -49,7 +53,9 @@ void UserSingleProfile::scanProfiles() {
             std::string path = std::filesystem::u8path(entry->path_content).filename().u8string();
             std::string path_lwr = string_to_lower(path.c_str());
             if (startsWith(path_lwr, "profile")) {
-                profiles.emplace_back(Profile(path));
+                if (get_content_entry(entry->path_content + PATH_SEP + "data")) {
+                    profiles.emplace_back(path);
+                }
             }
         }
     }
@@ -90,7 +96,7 @@ void UserSingleProfile::addProfile(const std::string& name) {
 	newProfile.name = name;
 	std::string root = getAllSavesDirectory();
 	std::string path = root + newProfile.dirName;
-	std::string origin = root + PATH_SEP + "DefaultPlayerData";
+	std::string origin = root + "DefaultPlayerData";
     std::error_code error;
     create_directories(path, &error);
 	if( error ) {
@@ -109,6 +115,7 @@ void UserSingleProfile::addProfile(const std::string& name) {
             IniManager man( path_data.c_str(), true );
             man.put("General", "name", name.c_str());
             man.putInt("General", getMissionNumberKey().c_str(), firstMissionNumber);
+            man.save();
             if (i == freeInds.size()) {
                 freeInds.push_back(true);
             } else {
@@ -122,7 +129,7 @@ void UserSingleProfile::addProfile(const std::string& name) {
 bool UserSingleProfile::removeDir(const std::string& dir) {
     std::error_code error;
     std::string allSaves = getAllSavesDirectory();
-    std::filesystem::path target_path = std::filesystem::u8path(allSaves + PATH_SEP + dir);
+    std::filesystem::path target_path = std::filesystem::u8path(allSaves + dir);
     std::filesystem::remove_all(target_path, error);
     if( error ) {
         ErrH.Abort("Can't remove profile directory: ", XERR_USER, error.value(), error.message().c_str());
@@ -141,13 +148,16 @@ void UserSingleProfile::removeProfile(int index) {
 	advance(forErase, index);
 	profiles.erase(forErase);
 
-	if ( getCurrentProfileIndex() >= index ) {
-		if ( getCurrentProfileIndex() || (profiles.size() == 0)) {
-			setCurrentProfileIndex(getCurrentProfileIndex() - 1);
-		} else {
-			setCurrentProfileIndex(0);
-		}
-	}
+    if (profiles.empty()) {
+        setCurrentProfileIndex(-1);
+    } else {
+        if (getCurrentProfileIndex() >= index ) {
+            setCurrentProfileIndex(getCurrentProfileIndex() - 1);
+        }
+        if (!isValidProfile()) {
+            setCurrentProfileIndex(0);
+        }
+    }
 }
 
 void UserSingleProfile::setCurrentProfileIndex(int index) {
@@ -172,7 +182,7 @@ std::string UserSingleProfile::getSavesDirectory() const {
     if (getLastGameType() == UserSingleProfile::MULTIPLAYER) {
         //Workaround for when inside multiplayer
         savesDir += "Multiplayer";
-    } else {
+    } else if (isValidProfile()) {
         savesDir += profiles[currentProfileIndex].dirName;
     }
 	return savesDir + PATH_SEP;
@@ -180,6 +190,7 @@ std::string UserSingleProfile::getSavesDirectory() const {
 
 void UserSingleProfile::loadProfile(int index) {
 	std::string path = getProfileIniPath(index);
+    if (path.empty()) return;
 	IniManager man(path.c_str(), false);
 	profiles[index].name = man.get("General","name");
     int missionNumber = firstMissionNumber;
@@ -188,47 +199,28 @@ void UserSingleProfile::loadProfile(int index) {
 	profiles[index].difficulty = (Difficulty)man.getInt("General","difficulty");
 }
 
-std::string UserSingleProfile::getFileNameWithDifficulty(const std::string& fileName) {
-	std::string res = MISSIONS_PATH;
-#if 0 //TODO apparently thisfunction is not used
-    std::string fileNameWithoutExt = fileName;
-	fileNameWithoutExt.erase(fileNameWithoutExt.size() - 4, fileNameWithoutExt.size());
-	res += "\\";
-	res += fileNameWithoutExt;
-	res += missionDifficultyPostfix[getDifficulty()];
-
-	WIN32_FIND_DATA FindFileData;
-	HANDLE hf = FindFirstFile( (res + ".spg").c_str(), &FindFileData );
-	if (hf == INVALID_HANDLE_VALUE) {
-		res = MISSIONS_PATH;
-		res += "\\";
-		res += fileName;
-		hf = FindFirstFile( res.c_str(), &FindFileData );
-		xassert( hf != INVALID_HANDLE_VALUE );
-	}
-#endif
-	return res;
-}
-
 void UserSingleProfile::setCurrentProfile(const std::string& name) {
-	for (int i = 0, s = profiles.size(); i < s; i++) {
+	for (size_t i = 0, s = profiles.size(); i < s; i++) {
 		if (profiles[i].name == name) {
 			setCurrentProfileIndex(i);
 			return;
 		}
 	}
-	if (profiles.size() > 0) {
+	if (!profiles.empty()) {
 		setCurrentProfileIndex(0);
 	}
 }
 
 void UserSingleProfile::setRecord(const std::string& name, int milis) {
+    if (!isValidProfile()) return;
 	std::string path = getProfileIniPath(currentProfileIndex);
 	IniManager man(path.c_str(), false);
 	man.putInt("Records", name.c_str(), milis);
+    man.save();
 }
 
 int UserSingleProfile::getRecord(const std::string& name) {
+    if (!isValidProfile()) return 0;
 	std::string path = getProfileIniPath(currentProfileIndex);
 	IniManager man(path.c_str(), false);
 	return man.getInt("Records", name.c_str());

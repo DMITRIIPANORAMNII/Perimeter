@@ -6,7 +6,12 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void Sleep(uint32_t millis) {
+#ifndef EMSCRIPTEN
     std::this_thread::sleep_for(std::chrono::milliseconds(millis));
+#else
+    // emscripten version must be Sleep free
+    abort();
+#endif
 }
 
 //According to MSDN: Both __iscsym and __iswcsym return a nonzero value if c is a letter, underscore, or digit. 

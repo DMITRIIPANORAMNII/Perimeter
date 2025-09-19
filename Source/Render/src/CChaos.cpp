@@ -79,7 +79,7 @@ cChaos::~cChaos()
 	delete pVS;
 	delete pPS;
 #endif
-	db->Destroy();
+    delete db;
 	RELEASE(pTex0);
 	RELEASE(pTexRender);
 	RELEASE(pTexBump);
@@ -125,10 +125,31 @@ void cChaos::Draw(cCamera *DrawNode) {
 #endif
 
     //TODO we need to add bump texture too
-    //TODO also implement shader equivalent for shader/Chaos/chaos.vsl to modify UVs at runtime
+    float umin,vmin;
+    Mat4f mat;
+
+    umin=sfmod(time*stime_tex0.x*uvmul,1.0f);
+    vmin=sfmod(time*stime_tex0.y*uvmul,1.0f);
+    memset(&mat,0,sizeof(mat));
+    mat.xx=mat.yy=mat.zz=mat.ww=1;
+    mat.zx = umin;
+    mat.zy = vmin;
+    gb_RenderDevice->SetTextureTransform(0, mat);
+
+    umin=sfmod(time*stime_tex1.x*uvmul,1.0f);
+    vmin=sfmod(time*stime_tex1.y*uvmul,1.0f);
+    memset(&mat,0,sizeof(mat));
+    mat.xx=mat.yy=mat.zz=mat.ww=1;
+    mat.zx = umin;
+    mat.zy = vmin;
+    gb_RenderDevice->SetTextureTransform(1, mat);
     gb_RenderDevice->SetNoMaterial(ALPHA_NONE,0,pTex0_0,pTex0_1,COLOR_ADD);
     gb_RenderDevice->SetWorldMatXf(GetGlobalMatrix());
+    
     db->Draw();
+    
+    gb_RenderDevice->SetTextureTransform(0, Mat4f::ID);
+    gb_RenderDevice->SetTextureTransform(1, Mat4f::ID);
 }
 
 #ifdef PERIMETER_D3D9
@@ -301,44 +322,25 @@ void cChaos::SetupDB() {
 	du=dv=1.0f/sub_div;
 
 #ifdef PERIMETER_D3D9
-	if(enablebump==BUMP_RENDERTARGET)
-	{
-		for(int iy=0;iy<=size;iy++)
-		{
-			VTYPE* vout=pVertex+iy*(size+1);
-
-			for(int ix=0;ix<=size;ix++,vout++)
-			{
-				vout->pos.x=ix*deltax+xmin;
-				vout->pos.y=iy*deltay+ymin;
-				vout->pos.z=0;
-                vout->diffuse=0xFFFFFFFF;
-				vout->u1()=ix*du;
-				vout->v1()=iy*dv;
-				vout->u2()=ix*du*uvmul;
-				vout->v2()=iy*dv*uvmul;
-			}
-		}
-	} else
+    float v1uvmul = enablebump == BUMP_RENDERTARGET ? uvmul : 1.0f;
+#else
+    float v1uvmul = 1.0f;
 #endif
-	{
-		for(int iy=0;iy<=size;iy++)
-		{
-			VTYPE* vout=pVertex+iy*(size+1);
 
-			for(int ix=0;ix<=size;ix++,vout++)
-			{
-				vout->pos.x=ix*deltax+xmin;
-				vout->pos.y=iy*deltay+ymin;
-				vout->pos.z=0;
-                vout->diffuse=0xFFFFFFFF;
-				vout->u1()=ix*du*uvmul;
-				vout->v1()=iy*dv*uvmul;
-				vout->u2()=ix*du*uvmul;
-				vout->v2()=iy*dv*uvmul;
-			}
-		}
-	}
+    for(int iy=0;iy<=size;iy++) {
+        VTYPE* vout=pVertex+iy*(size+1);
+
+        for(int ix=0;ix<=size;ix++,vout++) {
+            vout->x=ix*deltax+xmin;
+            vout->y=iy*deltay+ymin;
+            vout->z=0.0f;
+            vout->diffuse=0xFFFFFFFF;
+            vout->u1()=ix*du*v1uvmul;
+            vout->v1()=iy*dv*v1uvmul;
+            vout->u2()=ix*du*uvmul;
+            vout->v2()=iy*dv*uvmul;
+        }
+    }
 
     int vbwidth=size+1;
     for (int y = 0; y < size; y++) {
@@ -361,7 +363,7 @@ void cChaos::RenderTexture()
 	cD3DRender* rd=gb_RenderDevice3D;
     if (!rd) return;
 	
-	rd->SetRenderTarget(pTexRender,NULL);
+	rd->SetRenderTarget(pTexRender, SurfaceImage::NONE);
 
 	float umin,vmin,umin1,vmin1;
 	umin=sfmod(time*stime_tex0.x,1.0f);
@@ -370,10 +372,10 @@ void cChaos::RenderTexture()
 	umin1=sfmod(time*stime_tex1.x,1.0f);
 	vmin1=sfmod(time*stime_tex1.y,1.0f);
 
-	gb_RenderDevice->DrawSprite2(0,0,pTexRender->GetWidth(),pTexRender->GetHeight(),
-					umin,vmin,1,1,
-					umin1,vmin1,1,1,
-					pTexBump,pTexBump,sColor4c(255,255,255,255),0,COLOR_ADD);
+    gb_RenderDevice->DrawSprite3(0, 0, pTexRender->GetWidth(), pTexRender->GetHeight(),
+                                 umin, vmin, 1, 1,
+                                 umin1, vmin1, 1, 1,
+                                 pTexBump, pTexBump, sColor4c(255, 255, 255, 255), 0, COLOR_ADD);
 	rd->RestoreRenderTarget();
 #endif
 }
@@ -384,7 +386,7 @@ void cChaos::RenderTex0()
 	cD3DRender* rd=gb_RenderDevice3D;
     if (!rd) return;
 
-	rd->SetRenderTarget(pTex0,NULL);
+	rd->SetRenderTarget(pTex0, SurfaceImage::NONE);
 
 	float umin,vmin,umin1,vmin1;
 	umin=1- xm::fmod(time * 0.1f, 1.0f);
@@ -393,10 +395,10 @@ void cChaos::RenderTex0()
 	umin1= xm::fmod(time * 0.1f, 1.0f);
 	vmin1= xm::fmod(time * 0.2f, 1.0f);
 
-    gb_RenderDevice->DrawSprite2(0,0,pTexRender->GetWidth(),pTexRender->GetHeight(),
-					umin,vmin,1,1,
-					umin1,vmin1,1,1,
-					pTex0_0,pTex0_1,sColor4c(255,255,255,255),0,COLOR_ADD);
+    gb_RenderDevice->DrawSprite3(0, 0, pTexRender->GetWidth(), pTexRender->GetHeight(),
+                                 umin, vmin, 1, 1,
+                                 umin1, vmin1, 1, 1,
+                                 pTex0_0, pTex0_1, sColor4c(255, 255, 255, 255), 0, COLOR_ADD);
 
 	rd->RestoreRenderTarget();
 #endif

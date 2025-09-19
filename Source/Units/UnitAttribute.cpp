@@ -170,6 +170,7 @@ void AttributeBase::init()
                 default:
                     break;
             }
+            break;
         default:
             break;
     }
@@ -621,7 +622,7 @@ bool DamageMolecula::isStable() const
 	return true;
 }
 
-const SaveDamageMolecula& SaveDamageMolecula::operator=(const DamageMolecula& data)
+SaveDamageMolecula& SaveDamageMolecula::operator=(const DamageMolecula& data)
 {
 	isAlive = data.isAlive();
 	elementsDead.clear();
@@ -694,9 +695,9 @@ void collect_content_crc() {
 const char* AttributeBase::internalName(bool alt) const
 {
     if (alt) {
-        return getEnumDescriptor(UNIT_ATTRIBUTE_NONE).nameAlt(ID);
+        return getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->nameAlt(ID);
     } else {
-        return getEnumDescriptor(UNIT_ATTRIBUTE_NONE).name(ID);
+        return getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->name(ID);
     }
 }
 
@@ -855,8 +856,8 @@ void loadUnitAttributes(bool campaign, XBuffer* scriptsSerialized) {
     auto& attrLib = attributeLibrary().map();
     for (auto first = attrLib.begin(), last = attrLib.end(); first != last;) {
         const AttributeIDBelligerent& attribute = (*first).first;
-        if (unavailableContentUnitAttribute(attribute.attributeID(), terGameContentSelect)
-            || unavailableContentBelligerent(attribute.belligerent(), terGameContentSelect)) {
+        if (unavailableContentUnitAttribute(attribute.attributeID(), terGameContentAvailable)
+            || unavailableContentBelligerent(attribute.belligerent(), terGameContentAvailable)) {
             first = attrLib.erase(first);
         } else {
             ++first;

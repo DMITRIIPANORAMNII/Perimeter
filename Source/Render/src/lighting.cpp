@@ -5,19 +5,21 @@
 
 LightingParameters::LightingParameters()
 {
-	generate_time=0.1f;
+	generate_time=0.100f; //How often generate new pattern
 	texture_name="RESOURCE\\Effect\\freeze.tga";
-	strip_width_begin=5;
-	strip_width_time=15;
-	strip_length=40;
-	fade_time=0.5f;
-	lighting_amplitude=40;
+	strip_width_begin=3.0f;
+	strip_width_time=5.5f;
+	strip_length=30.0f; //How long each segment will be
+	fade_time=0.150f;
+    min_amplitude=4.0f; //The min width that the arc pattern will have from the line center
+    max_amplitude=8.0f; //The max width that the arc pattern will have from the line center
 }
 
 cLighting::cLighting()
 :cIUnkClass(0)
 {
 	time=0;
+    scaler=1.0f;
 	pTexture=GetTexLibrary()->GetElement(param.texture_name.c_str());
 }
 
@@ -61,7 +63,7 @@ void cLighting::Draw(cCamera *pCamera)
 void cLighting::OneLight::Draw(cCamera *pCamera,cLighting* parent)
 {
 /*
-	sColor4c color(255,255,255);
+	sColor4c color(255,255,255, 255);
 	for(int i=1;i<position.size();i++)
 	{
 		Vect3f& n0=position[i-1];
@@ -115,17 +117,20 @@ void cLighting::OneLight::Draw(cCamera *pCamera,cLighting* parent)
     uint32_t diffuse = gb_RenderDevice->ConvertColor(sColor4c(255,255*a,255,a*255));
 	gb_RenderDevice->SetNoMaterial(ALPHA_ADDBLENDALPHA,0,parent->pTexture);
     gb_RenderDevice->SetWorldMat4f(nullptr);
-    DrawBuffer* db = gb_RenderDevice->GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLESTRIP);
     
-	float size=parent->param.strip_width_begin+time*parent->param.strip_width_time;
-    sVertexXYZDT1 *vb = db->LockTriangleStripSteps<sVertexXYZDT1>(strip_list.size());
-    for (size_t i = 0; i < strip_list.size(); ++i) {
+    float scale = max(1.0f, parent->scaler * 0.5f);
+	float size = parent->param.strip_width_begin * scale;
+    size += time * parent->param.strip_width_time * scale;
+    size_t steps = strip_list.size();
+    DrawBuffer* db = gb_RenderDevice->GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLESTRIP, (steps + 1) * 2);
+    sVertexXYZDT1 *vb = db->LockTriangleStripSteps<sVertexXYZDT1>(steps);
+    for (size_t i = 0; i < steps; ++i) {
         const OneStrip& p = strip_list[i];
         sVertexXYZDT1& v1 = vb[i*2];
         sVertexXYZDT1& v2 = vb[i*2+1];
         v1.diffuse = v2.diffuse = diffuse;
-        v1.pos=p.pos-(size*p.n);
-        v2.pos=p.pos+(size*p.n);
+        v1.setPos(p.pos-(size*p.n));
+        v2.setPos(p.pos+(size*p.n));
         v1.u1()=v2.u1()=p.u;
         v1.v1()=0;v2.v1()=1;
 	}
@@ -143,7 +148,7 @@ void cLighting::Animate(float dt)
 		time-=param.generate_time;
 		PreGenerate g;
 		g.pos_begin=pos_begin;
-		g.pos_end=pos_end[xm_random_generator()%pos_end.size()];
+		g.pos_end=pos_end[rnd() % pos_end.size()];
 		pre_generate.push_back(g);
 	}
 
@@ -161,18 +166,19 @@ void cLighting::Animate(float dt)
 	}
 }
 
-void cLighting::Init(Vect3f pos_begin_, std::vector<Vect3f>& pos_end_)
+void cLighting::Init(Vect3f pos_begin_, std::vector<Vect3f>& pos_end_, float scaler_)
 {
 	global_pos.set(Mat3f::ID,pos_begin);
 	pos_begin=pos_begin_;
 	pos_end=pos_end_;
+    scaler=scaler_;
 	xassert(!pos_end.empty());
 }
 
-void cLighting::Generate(Vect3f pos_begin,Vect3f pos_end,cCamera *pCamera)
+void cLighting::Generate(Vect3f pos_begin_,Vect3f pos_end_,cCamera *pCamera)
 {
 	OneLight* p=new OneLight;
-	p->Generate(pos_begin,pos_end,pCamera,this);
+	p->Generate(pos_begin_,pos_end_,pCamera,this);
 	lights.push_back(p);
 }
 
@@ -203,12 +209,13 @@ void cLighting::OneLight::Generate(Vect3f pos_begin_,Vect3f pos_end_,cCamera *pC
 	std::vector<float> pos(size+2);
 	pos[0]=pos[pos.size()-1]=0;
 
-	float amplitude=parent->param.lighting_amplitude;
-	for(int i=2;i<=size;i*=2)
-	{
-		GenerateInterpolate(pos,i,amplitude);
-		amplitude*=0.5f;
-	}
+    float min_amp=parent->param.min_amplitude * parent->scaler;
+    float max_amp=min(min_amp * parent->scaler, parent->param.max_amplitude);
+	for(int i=2;i<=size;i*=2) {
+		GenerateInterpolate(pos,i,min_amp,max_amp);
+        min_amp *= 0.5f;
+        max_amp *= 0.75f;
+    }
 
 	Vect3f tangent=pos_end-pos_begin;
 	tangent.Normalize();
@@ -231,14 +238,18 @@ void cLighting::OneLight::Generate(Vect3f pos_begin_,Vect3f pos_end_,cCamera *pC
 	BuildStrip(pCamera,parent);
 }
 
-void cLighting::OneLight::GenerateInterpolate(std::vector<float>& pos,int size,float amplitude)
-{
-
-	RandomGenerator& r=xm_random_generator;
-	std::vector<float> p(size);\
-	int i;
-	for(i=0;i<size;i++)
-		p[i]=r.frnd(amplitude);
+void cLighting::OneLight::GenerateInterpolate(std::vector<float>& pos,int size, float min_amp, float max_amp) {
+	std::vector<float> p(size);
+    int i;
+    
+	for (i=0;i<size;i++) {
+        float a = rnd.frnd(max_amp);
+        if (a < 0) {
+            p[i] = min(-min_amp, a);
+        } else {
+            p[i] = max(min_amp, a);
+        }
+    }
 
 	for(i=1;i<pos.size()-1;i++)
 	{

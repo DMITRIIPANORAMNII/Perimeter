@@ -463,7 +463,6 @@ void terIconBuilding::quant()
 
 void terIconBuilding::show(const Vect3f& pos)
 {
-	xassert(pos);
 	Mat3f mat;
 	mat.xpose(terCamera->GetCamera()->GetMatrix().rot());
 
@@ -482,7 +481,7 @@ void terBuilding::ShowInfo()
 	connection_icon_.quant();
 	energy_icon_.quant();
 	
-	if(isConstructed() && attr()->iconDistanceFactor && visible_){
+	if(isConstructed() && 0 < attr()->iconDistanceFactor && visible_){
 		if(buildingStatus() & BUILDING_STATUS_CONNECTED){
 			int flag = BUILDING_STATUS_POWERED | BUILDING_STATUS_ENABLED;
 			if((buildingStatus() & flag) != flag){
@@ -696,7 +695,7 @@ int terBuildingPowered::repairRequest() const
 //-------------------------------------------
 
 terBuildingEnvironment::terBuildingEnvironment(const UnitTemplate& data) 
-: terBuildingPowered(data)
+: terBuilding(data)
 {
 }
 

@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include "StdAfx.h"
+#include "UnitAttribute.h"
 #include "GameContent.h"
 #include "files/files.h"
 
@@ -11,6 +12,7 @@ namespace scripts_export {
 #include "BelligerentSelect.h"
 #include "qd_textdb.h"
 #include "Localization.h"
+#include "codepages/codepages.h"
 
 #include <map>
 #include <set>
@@ -21,11 +23,8 @@ int firstMissionNumber = 0;
 
 static std::map<std::string, ModMetadata> gameMods;
 
-///The identified content at the root of game content, this only can be one thing 
 GAME_CONTENT terGameContentBase = CONTENT_NONE;
-///All available contents in this installation (base + addons)
 GAME_CONTENT terGameContentAvailable = CONTENT_NONE;
-///Current selected content, can be several or only one in available content (when user chooses one)
 GAME_CONTENT terGameContentSelect = CONTENT_NONE;
 
 std::map<std::string, ModMetadata>& getGameMods() {
@@ -123,10 +122,6 @@ void loadMappings(const std::string& path, const filesystem_scan_options* option
 void findGameContent() {
     //Get the path where game content is located by scanning diff paths
     std::vector<std::string> paths;
-
-    //Check cmdline first
-    const char* cmdlinePath = check_command_line("content");
-    if (cmdlinePath) paths.emplace_back(cmdlinePath);
     
     //Add path stored in settings if any
     IniManager* ini = getSettings();
@@ -172,6 +167,22 @@ void findGameContent() {
 
     //Path stored in settings from last run
     if (settingsPath) paths.emplace_back(settingsPath);
+
+    //Check cmdline, overrides other methods
+    const char* cmdlinePath = check_command_line("content");
+    if (cmdlinePath) {
+        paths.clear();
+        paths.emplace_back(cmdlinePath);
+    }
+
+#ifdef GPX
+    paths.clear();
+#ifdef EMSCRIPTEN
+    paths.emplace_back("/");
+#else
+    paths.emplace_back("./");
+#endif
+#endif
 
     //Check paths for Resource dir
     std::set<std::string> scannedPaths;
@@ -296,6 +307,7 @@ void loadAddonET(ModMetadata& mod) {
                     default:
                         continue;
                 }
+                break;
             //ET stations
             case UNIT_ATTRIBUTE_ELECTRO_STATION1:
             case UNIT_ATTRIBUTE_ELECTRO_STATION2:
@@ -316,9 +328,6 @@ void loadAddonET(ModMetadata& mod) {
             paths[src.ModelNameArray[j]] = {};
         }
     }
-
-    //Make ET campaign maps available normally since we cant unlock em
-    paths["resource/battle/scenario"] = { "resource/battle" };
     
     //Add textures, these don't overlap original harkback structures textures
     paths["resource/models/main/exodus"] = {};
@@ -381,13 +390,12 @@ void loadAddonET(ModMetadata& mod) {
         }
     } else {
         //This is a reworked ET
-        
         paths["Resource/Models"] = {};
     }
 
     //Load texts, first try current lang, then english, then russian
-    std::string locale = getLocale();
-    std::string locpath = getLocDataPath();
+    const std::string& locale = getLocale();
+    const std::string& locpath = getLocDataPath();
     std::vector<std::string> lang_paths;
     lang_paths.emplace_back(locpath);
     lang_paths.emplace_back("Resource/LocData/English/");
@@ -444,6 +452,9 @@ void loadAddonET(ModMetadata& mod) {
         }
 
         if (legacy) {
+            //On GW the survival1 doesn't seem to have much, ET maps use mostly the survival1 so we override it
+            paths["scripts/triggers/survival1.scr"] = {};
+            
             //Try to use ET interface so we can have icons at least, non legacy the base game has the icons already
             paths["Resource/Icons/intf"] = {};
         }
@@ -505,8 +516,8 @@ void loadMod(const ModMetadata& mod) {
     loadLocalizedResources(mod.path + PATH_SEP);
 
     //Load scripts
-    if (get_content_entry(mod.path + "Scripts") != nullptr) {
-        mapContentPath(mod.path + "Scripts", "Scripts");
+    if (get_content_entry(mod.path + PATH_SEP + "Scripts") != nullptr) {
+        mapContentPath(mod.path + PATH_SEP + "Scripts", "Scripts");
     }
 }
 
@@ -579,6 +590,8 @@ void detectGameContent() {
     loadLocalizedResources();
         
     //Detect if we have extra contents/mods
+    const size_t DESC_BUF_LEN = 10240;
+    static char desc_buf[DESC_BUF_LEN];
     int loadMods = 1;
     check_command_line_parameter("mods", loadMods);
     std::vector<ModMetadata> foundMods;
@@ -589,36 +602,46 @@ void detectGameContent() {
             
             ModMetadata data = {};
             data.available = false;
+            data.enabled = false;
             data.path = entry_path.u8string();
             data.mod_name = entry_path.filename().u8string();
 
-            std::string path_ini = data.path + PATH_SEP + "mod.ini";
             bool is_content_ET = isContentET(data.path + PATH_SEP);
-            if (get_content_entry(path_ini)) {
+            std::string path_ini = convert_path_content(data.path + PATH_SEP + "mod.ini");
+            if (!path_ini.empty()) {
                 //Load mandatory .ini fields
                 IniManager mod_ini = IniManager(path_ini.c_str(), true);
                 data.available = true;
                 data.mod_name = mod_ini.get("Mod", "name");
                 data.mod_version = mod_ini.get("Mod", "version");
                 if (data.mod_name.empty()) {
+                    data.available = false;
                     fprintf(stderr, "Missing name in Mod section at %s, not loading\n", path_ini.c_str());
-                    data.available = false;
+                    data.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorMissingAttribute");
+                    data.errors.emplace_back("[Mod] name");
                 } else if (data.mod_version.empty()) {
-                    fprintf(stderr, "Missing version in Mod section at %s, not loading\n", path_ini.c_str());
                     data.available = false;
+                    fprintf(stderr, "Missing version in Mod section at %s, not loading\n", path_ini.c_str());
+                    data.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorMissingAttribute");
+                    data.errors.emplace_back("[Mod] version");
                 }
 
                 //Load optional fields
                 mod_ini.check_existence = false;
                 //Try loading in current locale, then description, then english
-                data.mod_description = mod_ini.get("Mod", ("description_" + locale).c_str());
-                if (data.mod_description.empty()) {
-                    data.mod_description = mod_ini.get("Mod", "description");
-                    if (data.mod_description.empty() && locale != "english") {
-                        data.mod_description = mod_ini.get("Mod", "description_english");
-                    }
+                if (ReadIniString("Mod", ("description_" + locale).c_str(), nullptr, desc_buf, DESC_BUF_LEN, path_ini) && *desc_buf) {
+                    data.mod_description = convertToCodepage(desc_buf, locale);
+                } else if ((ReadIniString("Mod", "description", nullptr, desc_buf, DESC_BUF_LEN, path_ini) && *desc_buf)
+                || (locale != "english" && ReadIniString("Mod", "description_english", nullptr, desc_buf, DESC_BUF_LEN, path_ini) && *desc_buf)) {
+                    data.mod_description = convertToCodepage(desc_buf, "english");
+                }
+                if (!data.mod_description.empty()) {
+                    string_replace_all(data.mod_description, "\\r", "");
+                    string_replace_all(data.mod_description, "\\n", "\n");
+                    string_replace_all(data.mod_description, "\\\\", "\\");
                 }
                 data.mod_authors = mod_ini.get("Mod", "authors");
+                data.mod_license = mod_ini.get("Mod", "license");
                 data.mod_url = mod_ini.get("Mod", "url");
                 
                 //Check version
@@ -628,6 +651,8 @@ void detectGameContent() {
                     if (0 < diff) {
                         fprintf(stderr, "Minimum game version '%s' requirement not satisfied for %s, not loading\n",
                                 data.content_game_minimum_version.c_str(), data.path.c_str());
+                        data.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorGameTooOld");
+                        data.errors.emplace_back(data.content_game_minimum_version);
                         data.available = false;
                     }
                 }
@@ -635,17 +660,31 @@ void detectGameContent() {
                 //Check content requirements
                 data.content_required_content = mod_ini.get("Content", "required_content");
                 data.content_disallowed_content = mod_ini.get("Content", "disallowed_content");
+
+                //Load mod config .ini fields
+                data.enabled = true;
+                std::string path_config_ini = data.path + PATH_SEP + "mod_config.ini";
+                if (get_content_entry(path_config_ini)) {
+                    IniManager mod_config_ini = IniManager(path_config_ini.c_str(), false);
+                    const char* mod_enabled_chr = mod_config_ini.get("Mod", "enabled");
+                    if (*mod_enabled_chr) {
+                        std::string mod_enabled = string_to_lower(mod_enabled_chr);
+                        data.enabled = mod_enabled != "0" && mod_enabled != "false";
+                    }
+                }
             } else if (is_content_ET) {
                 //Provide adhoc mod info for legacy ET folder
                 bool isRussian = startsWith(locale, "russian");
                 data.available = true;
+                data.enabled = true;
                 data.mod_name = "Perimeter: Emperor's Testament";
                 data.mod_version = "2.0.0";
                 data.mod_description = isRussian ? "Периметр: Завет Императора" : "Perimeter: Emperor's Testament";
                 data.mod_authors = "K-D LAB";
                 data.mod_url = "https://kdlab.com";
             } else {
-                fprintf(stderr, "Mod folder %s has missing info file %s, not loading\n", data.path.c_str(), path_ini.c_str());
+                fprintf(stderr, "Mod folder %s has missing info file mod.ini, not loading\n", data.path.c_str());
+                data.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorMissingModInfo");
             }
             
             //Force disable all mods
@@ -655,12 +694,13 @@ void detectGameContent() {
 
             //Avoid possible duplicates of ET
             if (data.available && is_content_ET && (terGameContentAvailable & PERIMETER_ET)) {
-                fprintf(stderr, "ET is already loaded when loading ET content at %s, not loading", data.path.c_str());
+                fprintf(stderr, "ET is already loaded when loading ET content at %s, not loading\n", data.path.c_str());
+                data.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorDuplicateContent");
                 data.available = false;
             }
             
             //Mark as enabled if available and not named with .off at end
-            data.enabled = data.available && !endsWith(entry_path.filename().u8string(), ".off");
+            data.enabled &= data.available && !endsWith(entry_path.filename().u8string(), ".off");
             
             //If is ET then load now so the rest of mods can act on content properly
             if (data.enabled && is_content_ET) {
@@ -683,7 +723,7 @@ void detectGameContent() {
     //Load mods
     for (ModMetadata& mod : foundMods) {
         if (0 < gameMods.count(mod.mod_name)) {
-            fprintf(stderr, "Mod %s at %s was already loaded, not loading", mod.mod_name.c_str(), mod.path.c_str());
+            fprintf(stderr, "Mod %s at %s was already loaded, not loading\n", mod.mod_name.c_str(), mod.path.c_str());
             continue;
         }
         
@@ -693,9 +733,13 @@ void detectGameContent() {
                 if (!getMissingGameContent(terGameContentAvailable, required).empty()) {
                     fprintf(stderr, "Game content '%s' not installed which is a requirement for %s, not loading\n",
                             mod.content_required_content.c_str(), mod.path.c_str());
+                    mod.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorRequiredContentMissing");
+                    mod.errors.emplace_back(mod.content_required_content);
                 } else {
                     fprintf(stderr, "Game content '%s' installed but not enabled which is a requirement for %s, not loading\n",
                             mod.content_required_content.c_str(), mod.path.c_str());
+                    mod.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorRequiredContentDisabled");
+                    mod.errors.emplace_back(mod.content_required_content);
                 }
                 mod.available = mod.enabled = false;
             }
@@ -705,6 +749,8 @@ void detectGameContent() {
             if (terGameContentSelect == disallowed) {
                 fprintf(stderr, "Game content '%s' is enabled which is not compatible for %s, not loading\n",
                         mod.content_disallowed_content.c_str(), mod.path.c_str());
+                mod.errors.emplace_back("TEXT=Interface.Menu.Mods.ErrorDisallowedContentEnabled");
+                mod.errors.emplace_back(mod.content_disallowed_content);
                 mod.available = mod.enabled = false;
             }
         }
@@ -792,7 +838,7 @@ bool unavailableContentBelligerent(terBelligerent belligerent, GAME_CONTENT cont
 std::vector<GAME_CONTENT> getGameContentEnums(const uint32_t& content) {
     std::vector<GAME_CONTENT> contentList;
     if (content) {
-        contentList = getEnumDescriptor(GAME_CONTENT()).keyCombination(content);
+        contentList = getEnumDescriptor(GAME_CONTENT())->keyCombination(content);
     }
     return contentList;
 }
@@ -806,7 +852,7 @@ GAME_CONTENT mergeGameContentEnums(const std::vector<GAME_CONTENT>& list) {
 }
 
 std::vector<GAME_CONTENT> getGameContentFromEnumName(const std::string& content) {
-    return getEnumDescriptor(GAME_CONTENT()).keysFromNameCombination(content);
+    return getEnumDescriptor(GAME_CONTENT())->keysFromNameCombination(content);
 }
 
 std::vector<GAME_CONTENT> getMissingGameContent(const GAME_CONTENT& content, const GAME_CONTENT& required) {

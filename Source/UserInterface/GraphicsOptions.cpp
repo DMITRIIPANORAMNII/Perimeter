@@ -4,6 +4,7 @@
 #include "GameShell.h"
 #include "Universe.h"
 #include "SourceUIResolution.h"
+#include "PerimeterShellUI.h"
 #include <set>
 #include <unordered_set>
 
@@ -26,14 +27,14 @@ GraphOptionsManager* GraphOptionsManager::instance = 0;
 void CustomGraphOptions::load(const char* sectionName, const char* iniFileName) {
 	IniManager iniManager(iniFileName);
 
-	landscapeDetails = iniManager.getInt(sectionName, "MapLevelLOD");
-	if (landscapeDetails <= LODS[0]) {
-		landscapeDetails = 0;
-	} else if (landscapeDetails > LODS[0] && landscapeDetails <= LODS[1]) {
-		landscapeDetails = 1;
-	} else {
-		landscapeDetails = 2;
-	}
+	int maxLevelLOD = iniManager.getInt(sectionName, "MapLevelLOD");
+    landscapeDetails = LOD_COUNT - 1;
+    for (int i = 0; i < LOD_COUNT; ++i) {
+        if (maxLevelLOD <= LODS[i]) {
+            landscapeDetails = i;
+            break;
+        }
+    }
 
 	mapReflections = iniManager.getInt(sectionName, "MapReflection");
 	objReflections = iniManager.getInt(sectionName,"ObjectReflection");
@@ -49,8 +50,6 @@ void CustomGraphOptions::load(const char* sectionName, const char* iniFileName) 
 	bumpMapping = terVisGeneric->PossibilityBump() ? iniManager.getInt(sectionName, "EnableBump") : 0;
 	bumpChaos = terVisGeneric->PossibilityBumpChaos() ? iniManager.getInt(sectionName, "EnableBumpChaos") : 0;
 	particleRate = iniManager.getFloat(sectionName, "ParticleRate");
-
-	compressedTextures = iniManager.getFloat(sectionName, "FavoriteLoadDDS");
 }
 
 void CustomGraphOptions::save(const char* iniFileName) {
@@ -72,8 +71,6 @@ void CustomGraphOptions::save(const char* iniFileName) {
 	iniManager.putInt("Graphics", "EnableBump", bumpMapping);
 	iniManager.putInt("Graphics", "EnableBumpChaos", bumpChaos);
 	iniManager.putFloat("Graphics", "ParticleRate", particleRate);
-
-	iniManager.putInt("Graphics", "FavoriteLoadDDS", compressedTextures);
 }
 
 void CustomGraphOptions::apply() {
@@ -108,8 +105,6 @@ void CustomGraphOptions::apply() {
 	}
 
 	terVisGeneric->SetGlobalParticleRate(particleRate);
-
-	gb_VisGeneric->SetFavoriteLoadDDS(compressedTextures);
 }
 
 void GraphOptions::load(const char* sectionName, const char* iniFileName) {
@@ -127,6 +122,9 @@ void GraphOptions::load(const char* sectionName, const char* iniFileName) {
     int fogEnableVal = 1;
     iniManager.getInt("Graphics", "FogEnable", fogEnableVal);
     fogEnable = fogEnableVal != 0;
+    int vsyncEnableVal = 1;
+    iniManager.getInt("Graphics", "VSync", vsyncEnableVal);
+    vsyncEnable = vsyncEnableVal != 0;
     
     std::set<DisplayMode> resSet;
 	resolutions.clear();
@@ -165,7 +163,7 @@ void GraphOptions::load(const char* sectionName, const char* iniFileName) {
         resSet.emplace(false, -1, res.x, res.y, 0);
     }
     
-    //Dump set into vector and order it, dont add window modes that are smaller
+    //Dump set into vector and order it, don't add window modes that are smaller
     for (DisplayMode res : resSet) {
         if (!res.fullscreen) {
             if (smallest.x != 0 && smallest.x < res.x) continue;
@@ -185,11 +183,13 @@ void GraphOptions::load(const char* sectionName, const char* iniFileName) {
 }
 
 void GraphOptions::apply() {
-    
-	bool change_depth=terBitPerPixel!=colorDepth; 
-    bool change_display_mode = terFullScreen != resolution.fullscreen;
+#ifndef GPX
+	bool change_depth = terBitPerPixel != colorDepth;
+    bool change_display_mode = (terFullScreen != 0) != resolution.fullscreen
+            || (terVSyncEnable != 0) != vsyncEnable;
     if (resolution.fullscreen) {
-        change_display_mode |= terScreenRefresh != resolution.refresh || terScreenIndex != resolution.display;
+        change_display_mode |= terScreenRefresh != resolution.refresh
+                            || terScreenIndex != resolution.display;
     } else {
         //If window then check if user moved it to another display first
         int windowScreenIndex = SDL_GetWindowDisplayIndex(sdlWindow);
@@ -197,10 +197,11 @@ void GraphOptions::apply() {
             terScreenIndex = windowScreenIndex;
         }
     }
-    
+
 	bool change_size = terScreenSizeX != resolution.x || terScreenSizeY != resolution.y;
 	if (change_display_mode || change_size || change_depth) {
 		terBitPerPixel = colorDepth;
+        terVSyncEnable = vsyncEnable;
         terFullScreen = resolution.fullscreen;
         if (terFullScreen) {
             terScreenIndex = resolution.display;
@@ -209,19 +210,23 @@ void GraphOptions::apply() {
         terScreenSizeX = resolution.x;
         terScreenSizeY = resolution.y;
         change_display_mode |= change_size;
-		gameShell->updateResolution(change_depth, change_size, change_display_mode);
+        if (gameShell) {
+            gameShell->updateResolution(change_depth, change_size, change_display_mode);
+        }
 	}
-    
-    if (terGrabInput != grabInput) {
+
+    if ((terGrabInput != 0) != grabInput) {
         terGrabInput = grabInput;
         check_command_line_parameter("GrabInput", terGrabInput);
-        if (terGrabInput && !terFullScreen) {
+        if (terGrabInput) {
             SDL_SetWindowGrab(sdlWindow, SDL_TRUE);
         } else {
             SDL_SetWindowGrab(sdlWindow, SDL_FALSE);
         }
     }
+#endif
     shell_anchor = static_cast<SHELL_ANCHOR>(uiAnchor);
+    _shellIconManager.reloadDesktop();
     
 	customOptions.apply();
 }
@@ -240,6 +245,7 @@ void GraphOptions::save(const char* iniFileName) {
     iniManager.putInt("Graphics", "ScreenRefresh", terScreenRefresh);
 	iniManager.putInt("Graphics", "BPP", colorDepth);
     iniManager.putInt("Graphics", "UIAnchor", uiAnchor);
+    iniManager.putInt("Graphics", "VSync", vsyncEnable ? 1 : 0);
     iniManager.putInt("Graphics", "GrabInput", grabInput ? 1 : 0);
     iniManager.putInt("Graphics", "FogEnable", fogEnable ? 1 : 0);
 }

@@ -1,6 +1,5 @@
 
 #include "StdAfx.h"
-#include "MainMenu.h"
 #include "Config.h"
 #include "Runtime.h"
 #include "terra.h"
@@ -8,6 +7,7 @@
 #include "Universe.h"
 #include "UniverseInterface.h"
 #include "GameShell.h"
+#include "AudioPlayer.h"
 #include "PerimeterShellUI.h"
 #include "Controls.h"
 #include "../Sound/PerimeterSound.h"
@@ -21,13 +21,13 @@
 #include "qd_textdb.h"
 #include "BelligerentSelect.h"
 #include "files/files.h"
+#include "MainMenu.h"
 
 extern MusicPlayer gb_Music;
 extern MissionDescription missionToExec;
 extern BGScene bgScene;
 
 std::vector<MissionDescription> battleMaps;
-int defaultBattleMapCount = 0;
 MonoSelect battleColors;
 bool flagNeedRefresh = false;
 
@@ -37,9 +37,8 @@ int battlePlayersPage = 0;
 //battle menu
 void loadBattleList() {
 	if (battleMaps.empty()) {
-		loadMapVector(battleMaps, "RESOURCE/BATTLE", ".spg");
-		defaultBattleMapCount = battleMaps.size();
-        loadMapVector(battleMaps, "RESOURCE/BATTLE/SCENARIO", ".spg");
+        const std::vector<const char*> paths = { "RESOURCE/BATTLE", "RESOURCE/BATTLE/SCENARIO" };
+        loadMapVector(battleMaps, paths, ".spg", false);
 	}
 }
 
@@ -167,8 +166,10 @@ void copyToUI() {
                 //Setup first slot with AI choices
                 setupFirstSlot(combo, false);
             }
-
-            if (battleColors.getPosition(i) != -1) {
+            
+            bool playerValid = i < missionToExec.playersAmountScenarioMax();
+            combo->Show(playerValid);
+            if (playerValid && battleColors.getPosition(i) != -1) {
                 combo->pos = missionToExec.playersData[i].difficulty + 1;
                 if (0 >= combo->pos || (combo->pos - 1) >= DIFFICULTY_MAX) combo->pos = 1;
                 setSlotVisible(u, true);
@@ -274,14 +275,9 @@ void onBattleMenuOpening() {
 	CListBoxWindow* list = (CListBoxWindow*)_shellIconManager.GetWnd(SQSH_MM_MAP_LIST);
 	list->NewItem(1);
 	list->Clear();
-    int s = defaultBattleMapCount + gameShell->currentSingleProfile.getLastMissionNumber();
-//	int s = defaultBattleMapCount;
-    if(s > battleMaps.size() || s < 0)
-        s = battleMaps.size();
-
-	for (int i = 0; i < s; i++) {
+    for (int i = 0; i < battleMaps.size(); i++) {
 		std::string name = getMapName(battleMaps[i].missionName().c_str());
-		list->AddString(name.c_str(), 0 );
+		list->AddString(name, 0);
 	}
     
     battleColors.reset(UI_PLAYERS_MAX, playerAllowedColorSize);
@@ -292,13 +288,13 @@ void onBattleMenuOpening() {
     setSlotClosed(2, true);
     setSlotClosed(3, true);
 
-    if (s) {
+    if (battleMaps.empty()) {
+        list->SetCurSel(-1);
+        clearMapDescWnd(SQSH_MM_BATTLE_MAP, SQSH_MM_BATTLE_MAP_DESCR_TXT, -1);
+    } else {
         list->SetCurSel(0);
         setupBattleDescWnd(0, battleMaps, SQSH_MM_BATTLE_MAP, SQSH_MM_BATTLE_MAP_DESCR_TXT);
-	} else {
-		list->SetCurSel(-1);
-		clearMapDescWnd(SQSH_MM_BATTLE_MAP, SQSH_MM_BATTLE_MAP_DESCR_TXT, -1);
-	}
+    }
 
     flagNeedRefresh = true;
 }
@@ -332,7 +328,10 @@ void startBattle(int pos, CShellWindow* pWnd) {
 		}
 	}
 
-	missionToExec.getActivePlayerData().setName(gameShell->currentSingleProfile.getCurrentProfile().name);
+    if (const Profile* profile = gameShell->currentSingleProfile.getCurrentProfile()) {
+        auto player = missionToExec.getActivePlayerData();
+        if (player) player->setName(profile->name);
+    }
     
     //Write current page UI settings into MD
     copyToMD();
@@ -385,13 +384,14 @@ void onMMBattleFrmButton(CShellWindow* pWnd, InterfaceEventCode code, int param)
 }
 
 void onMMBattleClrButton(CShellWindow* pWnd, InterfaceEventCode code, int param) {
+    int i = UI_PLAYERS_MAX * battlePlayersPage + (pWnd->ID - SQSH_MM_BATTLE_PLAYER1_CLR_BTN);
 	CColorComboWindow *pCombo = (CColorComboWindow*) pWnd;
 	if( code == EVENT_CREATEWND ) {
-		pCombo->pos = 3 - (SQSH_MM_BATTLE_PLAYER4_CLR_BTN - pWnd->ID);
+		pCombo->pos = i; //0 to 3
 	} else if ( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
-		pCombo->pos = battleColors.putNext(3 - (SQSH_MM_BATTLE_PLAYER4_CLR_BTN - pWnd->ID));
+		pCombo->pos = battleColors.putNext(i);
 	} else if ( code == EVENT_RUNPRESSED && intfCanHandleInput() ) {
-		pCombo->pos = battleColors.putPrevious(3 - (SQSH_MM_BATTLE_PLAYER4_CLR_BTN - pWnd->ID));
+		pCombo->pos = battleColors.putPrevious(i);
 	}
 }
 

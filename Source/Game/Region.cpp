@@ -7,6 +7,8 @@
 
 #if !defined(_MSC_VER) || (_MSC_VER >= 1900)
 #include <functional> // bind
+#include <unordered_set>
+
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -804,9 +806,9 @@ CellLine& Region::cell_line(int y)
 	return dispatcher()->rasterize_column[y];
 }
 
-void Region::append(Region* multi_region)
+void Region::append(ShareHandle<Region> multi_region)
 {
-	push_back(multi_region);
+	emplace_back(multi_region);
 	multi_region->parent = this;
 }
 
@@ -839,7 +841,7 @@ Region* Region::find_parent_to_append(Column& column)
 //	}
   	
 //	xassert(0);
-	return 0;
+	return nullptr;
 }
 
 void Region::save(XBuffer& buf) const
@@ -1023,8 +1025,9 @@ void RegionDispatcher::vectorize(int minimalRegionSize, bool initSpline)
 	SeedList seeds;
 	restoreSeeds(edit_column, seeds);
 	Region::clear();
-
+#ifndef _FINAL_VERSION_
 	int analyze_cnt = 0;
+#endif
 	if(edit_column.front().changed()) {
 	    CellLine line = CellLine();
         CellLine::analyze(line, edit_column.front(), seeds);
@@ -1033,18 +1036,21 @@ void RegionDispatcher::vectorize(int minimalRegionSize, bool initSpline)
 	for(i = i_next = edit_column.begin(), ++i_next; i_next != edit_column.end(); i = i_next, ++i_next)
 		if(i->changed() || i_next->changed()){
 			CellLine::analyze(*i,*i_next, seeds);
+#ifndef _FINAL_VERSION_
 			analyze_cnt++;
+#endif
 		}
     if(edit_column.back().changed()) {
         CellLine line = CellLine();
         CellLine::analyze(edit_column.back(), line, seeds);
     }
 
+#ifndef _FINAL_VERSION_
 	statistics_add(analyze_cnt, STATISTICS_GROUP_NUMERIC, analyze_cnt);
+#endif
 
-	typedef std::vector<Region*> RegionList;
-	RegionList regions;
-	std::list<ShareHandle<Region> > bad_regions;
+    std::vector<ShareHandle<Region>> regions;
+	std::vector<ShareHandle<Region>> bad_regions;
 	
 	SeedList::iterator si;
 	FOR_EACH(seeds, si)
@@ -1061,28 +1067,27 @@ void RegionDispatcher::vectorize(int minimalRegionSize, bool initSpline)
 		FOR_EACH(seeds, si){
 			Cell* seed = *si;
 			if(!seed->l_region && (pass || seed->l_cw == seed)){ // Positive first
-				Region* region = new Region();
+                ShareHandle<Region> region = ShareHandle(new Region());
 				region->parent = this;
 				region->set(seed);
 				if(region->numCells() >= minimalRegionSize && (!initSpline || region->initSpline())){
 					regions.push_back(region);
-				}
-				else{
+				} else {
 					region->positive_ = false; // not to be chosen in find_parent_to_append
-					bad_regions.push_back(region);
+					bad_regions.emplace_back(region);
 				}
 			}
 		}
 	}
 
-	RegionList::iterator ri;
-	FOR_EACH(regions, ri){
-		if((*ri)->positive())
-			append(*ri);
-		else{
-			Region* region = (*ri)->find_parent_to_append(edit_column);
-			if(region)
-				region->append(*ri);
+	for (auto& region : regions) {
+		if (region->positive()) {
+            append(region);
+        } else {
+			Region* parent_region = region->find_parent_to_append(edit_column);
+			if (parent_region) {
+                parent_region->append(region);
+            }
 		}
 	}
 
@@ -1744,6 +1749,8 @@ may_clip:
 			case Segment::Clipped:
 				segments.insert(si, rest);
 				break;
+            default:
+                break;
 			}
 		}
 		si = segments.erase(si);
@@ -1772,6 +1779,8 @@ void RegionDispatcher::clip_by_circle(const Point& p, float clip_radius, int sav
 			si = segments.erase(si);
 			--si;
 			break;
+        default:
+            break;
 		}
 }
 

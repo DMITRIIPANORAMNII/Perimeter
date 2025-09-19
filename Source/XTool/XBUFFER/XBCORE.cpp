@@ -26,7 +26,12 @@ void XBuffer::alloc(size_t sz)
 void XBuffer::realloc(size_t sz) {
     if (buf && sz) {
         size = sz;
+        char* oldbuf = buf;
         buf = static_cast<char*>(std::realloc(buf, size));
+        if (!buf) {
+            buf = oldbuf;
+            free();
+        }
     } else {
         alloc(sz);
     }
@@ -124,7 +129,7 @@ size_t XBuffer::write(const void* s, size_t len, bool bin_flag)
 XBuffer& XBuffer::operator< (const char* v) 
 { 
 	if(v) 
-		write(v, strlen(v), 0); 
+		write(v, strlen(v), false); 
 	return *this; 
 }
 

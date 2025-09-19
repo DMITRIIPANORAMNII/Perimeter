@@ -53,12 +53,12 @@ void cUnkLight::Draw(cCamera *DrawNode)
 	float dr=2*GetRadius()/(NumberPlane+1);
 
     gb_RenderDevice->SetWorldMat4f(nullptr);
-    DrawBuffer* db = gb_RenderDevice->GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLESTRIP);
     
 	float tex=0;
 	Vect3f WorldK=DrawNode->GetPos()-GetPos();
 	FastNormalize(WorldK);
 
+    DrawBuffer* db = gb_RenderDevice->GetDrawBuffer(sVertexXYZDT1::fmt, PT_TRIANGLESTRIP, (NumberPlane + 1) * 2);
 	sVertexXYZDT1* vb = db->LockTriangleStripSteps<sVertexXYZDT1>(NumberPlane);
     
 	for(int i=0;i<NumberPlane;i++,tex+=1) {
@@ -67,11 +67,11 @@ void cUnkLight::Draw(cCamera *DrawNode)
         sVertexXYZDT1& v0 = vb[i*2];
         sVertexXYZDT1& v1 = vb[i*2+1];
 		if (i&1) {
-            v0.pos = GetPos() - sx + sy - sz;
-            v1.pos = GetPos() - sx - sy - sz;
+            (GetPos() - sx + sy - sz).write(v0.pos);
+            (GetPos() - sx - sy - sz).write(v1.pos);
         } else {
-            v0.pos = GetPos() + sx + sy - sz;
-            v1.pos = GetPos() + sx - sy - sz;
+            (GetPos() + sx + sy - sz).write(v0.pos);
+            (GetPos() + sx - sy - sz).write(v1.pos);
         }
 		v0.GetTexel().set(tex,0); v1.GetTexel().set(tex,1);
 		v0.diffuse=v1.diffuse=Diffuse;

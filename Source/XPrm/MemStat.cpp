@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+#include "StdAfxXPrm.h"
 
 #include <process.h>
 #include <crtdbg.h>
@@ -110,12 +110,12 @@ int total_memory_used()
 ///////////////////////////////////////////////////////////////////////
 //	Tracking System
 ///////////////////////////////////////////////////////////////////////
-void allocation_tracking(char* title)
+void allocation_tracking(const char* title)
 {
 	allocation_tracking(title, 0);
 }
 
-void allocation_tracking(char* title, AllocationAccumulator* accumulator)
+void allocation_tracking(const char* title, AllocationAccumulator* accumulator)
 {
 	static ofstream out;
 	static int opened, disabled;

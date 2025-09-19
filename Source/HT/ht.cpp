@@ -1,27 +1,49 @@
 #include "StdAfx.h"
+#include "Universe.h"
 #include "ht.h"
 #include "GameShell.h"
 #include "GenericControls.h"
 #include "Config.h"
-#include "Universe.h"
 #include "LagStatistic.h"
 #include <cstdlib>
 #include <thread>
 #include <SDL_thread.h>
 
+#include "./mt_config.h"
+
 #ifdef _WIN32
 #include "objbase.h"
 #endif
 
+#ifdef GPX
+#include <c/gamepix.h>
+#endif
+
 const SDL_threadID bad_thread_id=-1;
 
+namespace MTConfig {
+#ifdef EMSCRIPTEN
+    constexpr int mtValue = 0;
+#else
+    int mtValue = -1;
+#endif
+    bool multithreading() {
+        xassert(mtValue != -1);
+        return mtValue == 1;
+    }
+    void setMultithreading(bool value) {
+#ifndef EMSCRIPTEN
+        xassert(mtValue == -1);
+        mtValue = value ? 1 : 0;
+#endif
+    }
+}
+
 HTManager* HTManager::self=nullptr;
-HTManager::HTManager(bool ht)
+HTManager::HTManager()
 {
 	lag_stat=new LagStatistic;
 	logic_thread_id=bad_thread_id;
-	setUseHT(ht);
-
 	restartGame_ = false;
 	
 	global_time.setUsePerfomance(false);
@@ -31,7 +53,6 @@ HTManager::HTManager(bool ht)
 	frame_time.setAverageInterval(-1);
 	scale_time.setAverageInterval(-1);
 	self=this;
-	init_logic=false;
 	end_logic=nullptr;
 
 	start_timer=false;
@@ -64,80 +85,68 @@ void HTManager::setSpeedSyncroTimer(float speed)
 
 int logic_thread_init(void*)
 {
-#ifdef _WIN32
-    //_alloca(4096+128); //TODO is this need?
-    
-    //Required for VFW so game can load AVI files in logic thread (like when AI builds Officer plant)
-    //VFW is used when not having FFMPEG, but just in case call it always
-    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-#endif
-
 	HTManager::instance()->logic_thread();
 	return 0;
 }
 
-void HTManager::setUseHT(bool use_ht_)
-{
-	if(PossibilityHT())
-		use_ht=use_ht_;
-	else
-		use_ht=false;
-}
-
 void HTManager::GameStart(const MissionDescription& mission)
 {
-    MT_SET_TYPE(MT_LOGIC_THREAD | MT_GRAPH_THREAD);
-	gameShell->GameStart(mission);
-    MT_SET_TYPE(MT_GRAPH_THREAD);
-	syncro_timer.skip();
-	syncro_timer.next_frame();
-	time=syncro_timer();
-	if(use_ht)
-	{
-		xassert(logic_thread_id==bad_thread_id);
-        SDL_Thread* thread = SDL_CreateThread(logic_thread_init, "perimeter_logic_thread", nullptr);
-        if (thread == nullptr) {
-            SDL_PRINT_ERROR("SDL_CreateThread perimeter_logic_thread failed");
-            logic_thread_id = bad_thread_id;
-        }  else {
-            logic_thread_id = SDL_GetThreadID(thread);
-            SDL_DetachThread(thread);
+        MT_SET_TYPE(MT_LOGIC_THREAD | MT_GRAPH_THREAD);
+        gameShell->GameStart(mission);
+        MT_SET_TYPE(MT_GRAPH_THREAD);
+        syncro_timer.skip();
+        syncro_timer.next_frame();
+        time = syncro_timer();
+        if (MTConfig::multithreading()) {
+            xassert(logic_thread_id == bad_thread_id);
+            SDL_Thread *thread = SDL_CreateThread(logic_thread_init, "perimeter_logic_thread", nullptr);
+            if (thread == nullptr) {
+                SDL_PRINT_ERROR("SDL_CreateThread perimeter_logic_thread failed");
+                logic_thread_id = bad_thread_id;
+            } else {
+                logic_thread_id = SDL_GetThreadID(thread);
+                SDL_DetachThread(thread);
+            }
         }
-	}
+
+#ifdef GPX
+    gpx()->sdk4()->interstitialAd();
+#endif
 }
 
 void HTManager::GameClose()
 {
-	MTG();
-    MT_SET_TYPE(MT_LOGIC_THREAD | MT_GRAPH_THREAD);
-	if(use_ht && logic_thread_id!=bad_thread_id)
-	{
-		end_logic=SDL_CreateSemaphore(0);
+        MTG();
+        MT_SET_TYPE(MT_LOGIC_THREAD | MT_GRAPH_THREAD);
+        if (MTConfig::multithreading() && logic_thread_id != bad_thread_id) {
+            end_logic = SDL_CreateSemaphore(0);
 
-		uint32_t ret= SDL_SemWait(end_logic);
-		xassert(ret==0);
+            uint32_t ret = SDL_SemWait(end_logic);
+            xassert(ret == 0);
 
-        SDL_DestroySemaphore(end_logic);
-		end_logic=nullptr;
-		logic_thread_id=bad_thread_id;
-	}
+            SDL_DestroySemaphore(end_logic);
+            end_logic = nullptr;
+            logic_thread_id = bad_thread_id;
+        }
 
-	gameShell->GameClose();
-    MT_SET_TYPE(MT_GRAPH_THREAD);
+        gameShell->GameClose();
+        MT_SET_TYPE(MT_GRAPH_THREAD);
+
+#ifdef GPX
+        gpx()->sdk4()->interstitialAd();
+#endif
 }
 
 void HTManager::logic_thread()
-{	
-	init_logic=true;
+{
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
-//	gameShell->GameStart(logic_arg.mission);
-	init_logic=false;
-	if(!start_timer){
-		start_timer = true;
-		syncro_timer.setTime(1);
-		syncro_timer.skip();
-		time = syncro_timer();
-	}
+
+    if(!start_timer){
+        start_timer = true;
+        syncro_timer.setTime(1);
+        syncro_timer.skip();
+        time = syncro_timer();
+    }
     if (check_command_line("dump_mt_tls")) {
         debug_dump_mt_tls();
     }
@@ -196,11 +205,8 @@ bool HTManager::Quant()
 		GameStart(missionToStart_);
 	}
 
-	if(use_ht)
+	if(MTConfig::multithreading())
 	{
-		if(init_logic)
-			Sleep(100);
-
 		if(logic_thread_id==bad_thread_id)
 		{
 			gameShell->NetQuant();
@@ -283,7 +289,7 @@ void HTManager::ClearDeleteUnit(bool delete_all)
 		else
 			quant=0;
 
-		if(use_ht)
+		if(MTConfig::multithreading())
 		{
 			while(gb_VisGeneric->GetGraphLogicQuant()<quant-wait_to_delete+2)
 			{
@@ -321,13 +327,6 @@ void HTManager::ClearDeleteUnit(bool delete_all)
 	}
 }
 
-bool HTManager::PossibilityHT()
-{
-    const unsigned int processor_count = std::thread::hardware_concurrency();
-    //NOTE: processor_count may be 0 if couldn't be detected
-    return 1 < processor_count;
-}
-
 float HTManager::GetLogicFps()
 {
 	MTAuto lock(&lock_fps);
@@ -342,10 +341,10 @@ void HTManager::GetLogicFPSminmax(float& fpsmin,float& fpsmax)
 
 void HTManager::Show()
 {
-#ifndef _FINAL
-	if(universe() && universe()->multiPlayer())
-	if(debug_show_lag_stat)
-		lag_stat->Show();
+#ifdef PERIMETER_DEBUG
+	if (universe() && universe()->multiPlayer() && debug_show_lag_stat) {
+        lag_stat->Show();
+    }
 #endif //_FINAL
 }
 

@@ -3,9 +3,10 @@
 #ifndef _PERIMETERSHELLUI_H
 #define _PERIMETERSHELLUI_H
 
+#include <utility>
+
 #include "tweaks.h"
 #include "GameShellSq.h"
-#include "AudioPlayer.h"
 #include "Universe.h"
 #include "qd_textdb.h"
 #include "SourceUIResolution.h"
@@ -90,8 +91,10 @@ public:
     SHELL_ANCHOR anchor;
     SHELL_ANCHOR anchor_children;
 
-	float x, y;
-	float sx, sy;
+	float x = 0.0f;
+    float y = 0.0f;
+	float sx = 0.0f;
+    float sy = 0.0f;
 
 	int    ID;
 	int    state;
@@ -106,7 +109,7 @@ public:
 	void SetTexPos(const Vect2f& v1, const Vect2f& v2);
 	void setFlashingInterval(float interval = -1);
 	virtual bool updateColor();
-	void createHotKeyString();
+	virtual void createHotKeyString();
 	virtual void loadFlashingParams(const sqshControl* attr) {
 		flashBG_R = attr->flashBG_R;
 		flashBG_G = attr->flashBG_G;
@@ -151,7 +154,12 @@ public:
 
 	static bool checkDefaultBtn(CShellWindow* btn) {
 		if (btn && btn->isEnabled() && btn->isVisible()) {
-			btn->m_handler( btn, EVENT_UNPRESSED, 0 );
+            if (btn->m_handler) {
+                btn->m_handler(btn, EVENT_UNPRESSED, 0);
+            } else {
+                //Fallback for buttons without handler
+                btn->OnLButtonUp(0.5f, 0.5f);
+            }
 			return true;
 		} else {
 			return false;
@@ -178,31 +186,34 @@ public:
 	virtual void Move(float _x, float _y, float _sx, float _sy);
 	virtual void scale(Vect2f& scaleV);
 	virtual void Show(int bShow);
-	virtual void Show(int bShow, int effect);
+	void Show(int bShow, int effect);
 	virtual void ClearEffect();
 	virtual void Enable(int bEnable);
-	bool isVisible() {
+	bool isVisible() const {
 		return (state & SQSH_VISIBLE);
 	}
-	bool isEnabled() {
+	bool isEnabled() const {
 		return (state & SQSH_ENABLED);
 	}
-	float getFlashingInterval() {
+	float getFlashingInterval() const {
 //		return flashInterval;
 		return flashTimer;
 	}
-	bool isFlashing() {
+	bool isFlashing() const {
 		return (flashTimer >= 0);
 	}
 	virtual void OnWindow(int enable);
-	virtual void OnFormatPopupMessage(char* cbBuffer);
-	virtual void OnFormatHotKeyPopupMessage(char* cbBuffer);
+	virtual void OnFormatPopupMessage(std::string& cbuffer);
+	virtual void OnFormatHotKeyPopupMessage(std::string& cbuffer);
 
 	virtual void draw(int bFocus);
 
 	virtual int  EffectSupported(){return 0;}
 	virtual void OnEffectStart(int effect){ m_effect = effect;}
 	bool OnEffectStop(int effect) {
+        if (m_effect == 0) {
+            return true;
+        }
 		m_effect = 0;
 /*
 		if (effect == effectButtonsFadeOut || effect == effectCtrlRollOut) {
@@ -245,18 +256,17 @@ public:
 	};
 
 	CShellPushButton(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	virtual ~CShellPushButton();
+	~CShellPushButton() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void OnLButtonDown(float _x, float _y);
-	virtual void OnLButtonUp(float _x, float _y);
-	virtual void OnRButtonDown(float _x, float _y);
-	virtual void OnRButtonUp(float _x, float _y);
-	virtual void OnWindow(int enable);
+	void Load(const sqshControl* attr) override;
+	void OnLButtonDown(float _x, float _y) override;
+	void OnLButtonUp(float _x, float _y) override;
+	void OnRButtonDown(float _x, float _y) override;
+	void OnRButtonUp(float _x, float _y) override;
+	void OnWindow(int enable) override;
+	void draw(int bFocus) override;
 
-	virtual void draw(int bFocus);
-
-	virtual int  EffectSupported(){
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 	void setText(const std::string& newLabelText) {
@@ -270,7 +280,7 @@ class CReplayPlayerPushButton : public CShellPushButton
 public:
 
 	CReplayPlayerPushButton(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	virtual ~CReplayPlayerPushButton();
+	~CReplayPlayerPushButton() override;
 
 	void Load(const sqshControl* attr) override;
 	void draw(int bFocus) override;
@@ -335,16 +345,16 @@ protected:
 public:
 
 	CShellComplexPushButton(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	virtual ~CShellComplexPushButton();
+	~CShellComplexPushButton() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void OnLButtonDown(float _x, float _y);
-	virtual void OnLButtonUp(float _x, float _y);
-	virtual void OnWindow(int enable);
-	virtual void Enable(int bEnable);
-	virtual void draw(int bFocus);
-	virtual void OnFormatPopupMessage(char* cbBuffer);
-	virtual void scale(Vect2f& scaleV);
+	void Load(const sqshControl* attr) override;
+	void OnLButtonDown(float _x, float _y) override;
+	void OnLButtonUp(float _x, float _y) override;
+	void OnWindow(int enable) override;
+	void Enable(int bEnable) override;
+	void draw(int bFocus) override;
+	void OnFormatPopupMessage(std::string& cbuffer) override;
+	void scale(Vect2f& scaleV) override;
 
 	void SetCheck(bool b);
 	bool GetCheck(){return m_bChecked;}
@@ -354,10 +364,10 @@ public:
 	void SetStatusNoEnergy(bool bSet){
 		m_bStatusNoEnergy = bSet;
 	}
-	bool GetStatusNoEnergy(){
+	bool GetStatusNoEnergy() const {
 		return m_bStatusNoEnergy;
 	}
-	float GetPhase(){
+	float GetPhase() const {
 		return m_fphase;
 	}
 
@@ -372,16 +382,16 @@ public:
 class CShellLegionButton : public CShellComplexPushButton
 {
 	cFont*      m_hFontLabel;
-	char		m_cbTotal[5];
+	char		m_cbTotal[16];
 public:
 
 	bool        m_bS, m_bO, m_bT; //хватает ли базовых
 
 	CShellLegionButton(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	virtual ~CShellLegionButton();
+	~CShellLegionButton() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 
 	void SetTotalUnitCount(int count, bool append);
 	void SetAtomEnable(bool bS, bool bO, bool bT){
@@ -447,16 +457,16 @@ class CTerrainBuildButton : public CShellComplexPushButton
 
 public:
 	CTerrainBuildButton(int id, CShellWindow* pParent, EVENTPROC p);
-	virtual ~CTerrainBuildButton();
+	~CTerrainBuildButton() override;
 
-	virtual void draw(int bFocus);
-	virtual int  HitTest(float _x, float _y);
-	virtual void OnFormatPopupMessage(char* cbBuffer);
-	virtual void Load(const sqshControl* attr);
-	void setParams(bool unitReady, float productionPhase, bool isBrig) {
-		CTerrainBuildButton::unitReady = unitReady;
-		CTerrainBuildButton::productionPhase = productionPhase;
-		CTerrainBuildButton::isBrig = isBrig;
+	void draw(int bFocus) override;
+	int  HitTest(float _x, float _y) override;
+	void OnFormatPopupMessage(std::string& cbuffer) override;
+	void Load(const sqshControl* attr) override;
+	void setParams(bool _unitReady, float _productionPhase, bool _isBrig) {
+		unitReady = _unitReady;
+		productionPhase = _productionPhase;
+		isBrig = _isBrig;
 	}
 	int partDisable;
 };
@@ -523,7 +533,7 @@ class CUITabSheet : public CShellWindow
 	int   m_nActivePage;
 
 	int HitTestTabHeader(float _x, float _y);
-	virtual void loadFlashingParams(const sqshTabSheet* attr) {
+	virtual void loadFlashingParamsSheet(const sqshTabSheet* attr) {
 		flashBG_R = attr->flashBG_R;
 		flashBG_G = attr->flashBG_G;
 		flashBG_B = attr->flashBG_B;
@@ -540,8 +550,8 @@ public:
 	CUITabSheet(int id, CShellWindow* pParent, EVENTPROC p);
 	~CUITabSheet();
 
-	void Load(const sqshTabSheet* attr);
-	void reload();
+	void LoadSheet(const sqshTabSheet* attr);
+	void reload() override;
 	void EnablePage(int nPage, bool bEnable);
 	void setFlashingPageInterval(int nPage, float interval = -1);
 	float getFlashingPageInterval(int nPage) {
@@ -555,11 +565,11 @@ public:
 	void SwitchPage(int nNewPage, bool bForceSelectUnit = true);
 	void SetSquadIcons(int n, SQUAD_ICON* pSqIcon);
 	void SetPageNumber(int nPage, int nNumber);
-	bool actionPerformed(InterfaceEventCode code, int param);
-	void createHotKeyString();
-	bool updateColor();
+	bool actionPerformed(InterfaceEventCode code, int param) override;
+	void createHotKeyString() override;
+	bool updateColor() override;
 
-	void postLoad();
+	void postLoad() override;
 
 	int  GetActivePage(){
 		return m_nActivePage;
@@ -571,13 +581,13 @@ public:
 		return m_nActivePage;
 	}
 
-	virtual int  HitTest(float _x, float _y);
-	virtual void OnLButtonDown(float _x, float _y);
-	virtual void OnLButtonDblClk(float _x, float _y);
-	virtual void OnRButtonDown(float _x, float _y);
-	virtual void draw(int bFocus);
-	virtual void scale(Vect2f& scaleV);
-	virtual void OnWindow(int enable);
+	int  HitTest(float _x, float _y) override;
+	void OnLButtonDown(float _x, float _y) override;
+	void OnLButtonDblClk(float _x, float _y) override;
+	void OnRButtonDown(float _x, float _y) override;
+	void draw(int bFocus) override;
+	void scale(Vect2f& scaleV) override;
+	void OnWindow(int enable) override;
 
 	void setActivePageChildrenVisible(bool visible);
 };
@@ -587,17 +597,17 @@ public:
 class CMultiTexWindow : public CShellWindow
 {
 public:
-	cTexture *m_hTexture2;
-	cTexture *m_hTexture3;
-
-	CMultiTexWindow(int id, CShellWindow* pParent, EVENTPROC p) :
-		CShellWindow(id, pParent, p){ m_hTexture2=0; m_hTexture3=0; }
-	virtual ~CMultiTexWindow();
-	virtual void Load(const sqshControl* attr);
-	virtual void LoadMenuWnd(const sqshControlContainer* attr);
+    bool image2hasBelligerentVersion = false;
+	cTexture *m_hTexture2 = nullptr;
+	cTexture *m_hTexture3 = nullptr;
+    
+    CMultiTexWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
+	~CMultiTexWindow() override;
+	void Load(const sqshControl* attr) override;
+	void LoadMenuWnd(const sqshControlContainer* attr) override;
 	virtual void init();
-	virtual void draw(int bFocus);
-	virtual int  EffectSupported() { return m_hTexture2 ? (effectCtrlRollIn|effectCtrlRollOut) : 0; }
+	void draw(int bFocus) override;
+	int  EffectSupported() override { return m_hTexture2 ? (effectCtrlRollIn|effectCtrlRollOut) : 0; }
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -606,16 +616,16 @@ class CShowMapWindow : public CShellWindow
 {
 public:
 	CShowMapWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CShowMapWindow();
+	~CShowMapWindow() override;
 
 	cTexture*		m_hTextureBG; 
 	Vect2f			m_vTexBGPos;
 	Vect2f			m_vTexBGSize;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 	void setWorldID(int id);
-	virtual int  EffectSupported(){
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 protected:
@@ -630,14 +640,16 @@ class CMoveButton : public CShellWindow
 {
 public:
 	static int snd;
-	float xstart,ystart;
+	float xstart = 0.0f;
+    float ystart = 0.0f;
 
 	CMoveButton(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) { }
 	
-	virtual int  EffectSupported() { return effectCtrlRollIn|effectCtrlRollOut; }
-//	virtual int  EffectSupported() { return effectButtonsFadeIn|effectButtonsFadeOut; }
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	int EffectSupported() override {
+        return effectCtrlRollIn|effectCtrlRollOut;
+    }
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 };
 
 
@@ -659,10 +671,10 @@ public:
 	bool soundEnabled;
 
 	CScaleButton(int id, CShellWindow* pParent, EVENTPROC p);
-	~CScaleButton();
-	virtual int  EffectSupported()	{ return effectButtonsFadeIn|effectButtonsFadeOut; }
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	~CScaleButton() override;
+	int EffectSupported() override { return effectButtonsFadeIn|effectButtonsFadeOut; }
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 	void setTexture(const char* name);
 };
 
@@ -670,16 +682,16 @@ class CPortraitWindow : public CShellWindow
 {
 public:
 	CPortraitWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CPortraitWindow();
+	~CPortraitWindow() override;
 
 	cTexture*		m_hTextureBG; 
 	Vect2f			m_vTexBGPos;
 	Vect2f			m_vTexBGSize;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 	void setTexture(const char* name);
-	virtual int  EffectSupported(){
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -688,16 +700,16 @@ class CLogoWindow : public CShellWindow
 {
 public:
 	CLogoWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CLogoWindow();
+	~CLogoWindow() override;
 	Vect2f			m_vTexPosRace[2][3];
 
 	cTexture*		m_hTextureBG; 
 	Vect2f			m_vTexBGPos;
 	Vect2f			m_vTexBGSize;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
-	virtual int  EffectSupported(){
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 	void setRace(int newRace) {
@@ -714,30 +726,30 @@ class CPushButton : public CShellPushButton
 {
 public:
 	CPushButton(int id, CShellWindow* pParent, EVENTPROC p) : CShellPushButton(id, pParent, p) { }
-	virtual int  EffectSupported()	{return 0;}
+	int EffectSupported() override { return 0; }
 };
 
 class CPushScaleButton : public CShellPushButton
 {
 public:
 	CPushScaleButton(int id, CShellWindow* pParent, EVENTPROC p) : CShellPushButton(id, pParent, p) { }
-	virtual int  EffectSupported() { return effectButtonsFadeIn|effectButtonsFadeOut; }
-	virtual void draw(int bFocus);
+	int EffectSupported() override { return effectButtonsFadeIn|effectButtonsFadeOut; }
+	void draw(int bFocus) override;
 };
 
 class CWorldEffect : public CMultiTexWindow
 {
 public:
 	CWorldEffect(int id, CShellWindow* pParent, EVENTPROC p) : CMultiTexWindow(id, pParent, p) { }
-	virtual int  EffectSupported() { return effectButtonsFadeIn|effectButtonsFadeOut; }
-	virtual void draw(int bFocus);
+	int EffectSupported() override { return effectButtonsFadeIn|effectButtonsFadeOut; }
+	void draw(int bFocus) override;
 };
 
 class CDialogWindow : public CShellWindow
 {
 public:
 	CDialogWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) { }
-	virtual void draw(int bFocus);
+	void draw(int bFocus) override;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -747,10 +759,6 @@ class CMapWindow : public CShellWindow
 	cTexture*	   m_pMapTexture;
 //	cFont*         m_hFont;
 	sColor4c*      m_bitmap;
-
-	char           m_cb1[15];
-	char           m_cb2[15];
-	char           m_cb3[15];
 
 	cTexture*		activeObjectTx;
 	float			activeObjectSx;
@@ -765,13 +773,13 @@ class CMapWindow : public CShellWindow
 
 public:
 
-	CMapWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CMapWindow();
+	CMapWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CMapWindow() override;
 
 	void drawBitmap(sColor4c* bitmap);
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -780,65 +788,102 @@ class CTextWindow : public CShellWindow
 {
 
 public:
-	CTextWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CTextWindow();
+	CTextWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CTextWindow() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 
-	void SetText(const char* text) {
-		textData = text;
-	}
+	virtual void SetText(const char* text);
 	void setText(const std::string& text) {
-		textData = text;
+        SetText(text.c_str());
 	}
 	const std::string& getText() const {
 		return textData;
 	}
-	virtual int EffectSupported() {
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 
 	bool victory;
 	int colorIndex;
+    Vect2f offset;
+    bool clipRender = false;
 
 protected:
+    float drawAlpha = 0;
 	std::string textData;
 	Vect2f			uv;
 	Vect2f			dudv;
-
 };
 
 class CTextStringWindow : public CTextWindow
 {
 
 public:
-	CTextStringWindow(int id, CShellWindow* pParent, EVENTPROC p = 0) : CTextWindow(id, pParent, p) {
+	CTextStringWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr) : CTextWindow(id, pParent, p) {
 	};
 
-	void draw(int bFocus) override;
+    void SetText(const char* text) override;
 };
 
-//////////////////////////////////////////////////////////
-class CCreditsWindow : public CShellWindow
+
+class CTextScrollableWindow : public CTextWindow
 {
-	std::string textData;
-	Vect2f			uv;
-	Vect2f			dudv;
+    std::vector<LocalizedText>	m_data;
+    float			m_fScrollerThumbPos;
+    cTexture*		thumbTexture;
+    Vect2f			thumbUV;
+    Vect2f			thumbDUDV;
+    float			vScrollSX;
+    float			vScrollSY;
+    float			vScrollThmbSX;
+    float			vScrollThmbSY;
+    float			vScrollMarginX;
+
+    cTexture*		m_hTextureBG;
+    Vect2f			m_vTexBGPos;
+    Vect2f			m_vTexBGSize;
+    Vect2f			uv;
+    Vect2f			dudv;
+
+    int currentScrollDirection;
+
+    enum
+    {
+        thumb_none,
+        thumb_up,
+        thumb_dn
+    };
+    
+    int CheckClick(float fx,float  fy);
+ 
+public:
+    bool			m_bScroller = false;
+    float           textHeight = 0;
+
+    CTextScrollableWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+    ~CTextScrollableWindow() override;
+
+    void SetText(const char* text) override;
+    void OnLButtonDown(float x, float y) override;
+    void OnMouseWheel(int delta) override;
+    void Load(const sqshControl* attr) override;
+    void draw(int bFocus) override;
+};
+//////////////////////////////////////////////////////////
+class CCreditsWindow : public CTextWindow
+{
 	float	timer;
 	float	maxTime;
 
 public:
-	CCreditsWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CCreditsWindow();
+	CCreditsWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CCreditsWindow() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
-	virtual void Show(int bShow);
-
-	virtual int EffectSupported() {
-		return effectButtonsFadeIn|effectButtonsFadeOut;
-	}
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
+	void Show(int bShow) override;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -846,31 +891,32 @@ public:
 struct sItem
 {
 	float x;
-	std::deque<std::string> m_data;
+	std::deque<LocalizedText> m_data;
 	int id;
 };
 
 class CListBoxWindow : public CShellWindow
 {
-//	cFont*          m_hFont;
-	sItem			*m_pItem;
-	int				m_nNumberItem;
-	int				m_nCurSel;
-	int				m_bScroller;
-	int				m_nTopItem;
-	float			m_fStringHeight;
-	float			m_fScrollerThumbPos;
-	float			txtdx;
-	float			txtdy;
-	cTexture*		thumbTexture;
+    cFont*          m_hFont1250 = nullptr;
+    cFont*          m_hFont1251 = nullptr;
+	sItem			*m_pItem = nullptr;
+	int				m_nNumberItem = 0;
+	int				m_nCurSel = 0;
+	int				m_bScroller = 0;
+	int				m_nTopItem = 0;
+	float			m_fStringHeight = 8.0f;
+	float			m_fScrollerThumbPos = 0.0f;
+	float			txtdx = 0.0f;
+	float			txtdy = 0.0f;
+	cTexture*		thumbTexture = nullptr;
 	Vect2f			thumbUV;
 	Vect2f			thumbDUDV;
-	float			vScrollSX;
-	float			vScrollSY;
-	float			vScrollThmbSX;
-	float			vScrollThmbSY;
+	float			vScrollSX = 0.0f;
+	float			vScrollSY = 0.0f;
+	float			vScrollThmbSX = 0.0f;
+	float			vScrollThmbSY = 0.0f;
 
-	cTexture*		m_hTextureBG;
+	cTexture*		m_hTextureBG = nullptr;
 	Vect2f			m_vTexBGPos;
 	Vect2f			m_vTexBGSize;
 	Vect2f			uv;
@@ -886,38 +932,38 @@ class CListBoxWindow : public CShellWindow
 	};
 
 	int CheckClick(float _x,float  _y);
-	int ItemFromPoint(float  _y);
 public:
-	CListBoxWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CListBoxWindow();
+	CListBoxWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CListBoxWindow() override;
 
 	void updateScroller();
 
 	void Clear();
-	void AddString(const char* cb,int nrow=0);
-	int  GetItemCount(int nrow=0){
+	void AddString(const std::string& cb,int nrow=0);
+    void AddLocalizedText(const LocalizedText& text, int nrow=0);
+	int GetItemCount(int nrow=0) {
 		return m_pItem[nrow].m_data.size();
 	}
-	int  GetCurSel(){
+	int GetCurSel() const {
 		return m_nCurSel;
 	}
 
 	void SetCurSel(int n);
 	void SetCurSelPassive(int n);
+    
+    int ItemFromPoint(float _y, bool nearest_when_outside = true);
 
-	const char* GetCurSelString();
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
-
-	virtual void Move(float _x, float _y, float _sx, float _sy);
-	virtual void OnLButtonDown(float _x, float _y);
-	virtual void OnLButtonDblClk(float _x, float _y);
-	virtual void OnMouseWheel(int delta);
+	void Move(float _x, float _y, float _sx, float _sy) override;
+	void OnLButtonDown(float _x, float _y) override;
+	void OnLButtonDblClk(float _x, float _y) override;
+	void OnMouseWheel(int delta) override;
 	
 	void NewItem(int nrow=0);
 	sItem& GetItem(int nrow)	{ return m_pItem[nrow]; }
-	virtual int EffectSupported() {
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -965,33 +1011,30 @@ protected:
 	/// возвращает длину части строки, которая влезет в окно по ширине
 	/// если строка войдёт целиком, то возвращает -1
 	int GetStringBreak(const std::string& str, bool ignore_spaces = false) const;
-    
-    void freeLocaleFonts();
-    void setupLocaleFonts(int size);
 
 public:
 	ChatWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~ChatWindow();
+	~ChatWindow() override;
 
 	void updateScroller();
 
 	void Clear();
 	void AddString(const LocalizedText* text);
 
-	int GetRowCount(){
+	size_t GetRowCount() const {
 		return m_data.size();
 	}
     
     void drawText(float Alpha);
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 
-    void OnMouseWheel(int delta);
-	virtual void OnLButtonDown(float _x, float _y);
-	virtual void OnLButtonDblClk(float _x, float _y);
+    void OnMouseWheel(int delta) override;
+	void OnLButtonDown(float _x, float _y) override;
+	void OnLButtonDblClk(float _x, float _y) override;
 	
-	virtual int EffectSupported() {
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -1016,19 +1059,19 @@ class CStatListBoxWindow : public CShellWindow {
 	Vect2f			m_vTexBGSize;
 
 public:
-	CStatListBoxWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CStatListBoxWindow();
+	CStatListBoxWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CStatListBoxWindow() override;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 
 	void Clear();
 	void AddString(const char* cb,int nrow=0);
 	void AddRace(int race, const sColor4c& color);
 	void NewItem(int nrow = 0);
-	sItem& GetItem(int nrow)	{ return m_pItem[nrow]; }
+	sItem& GetItem(int nrow) { return m_pItem[nrow]; }
 
-	virtual int EffectSupported() {
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -1057,14 +1100,14 @@ public:
 	Vect2f			m_vTexBGPos;
 	Vect2f			m_vTexBGSize;
 
-	CSliderWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CSliderWindow();
-	virtual void draw(int bFocus);
-	virtual int  HitTest(float _x, float _y);
-    virtual void OnLButtonDown(float _x, float _y);
-	virtual void Load(const sqshControl* attr);
-	virtual void OnWindow(int enable);
-	virtual int EffectSupported() {
+	CSliderWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CSliderWindow() override;
+	void draw(int bFocus) override;
+	int  HitTest(float _x, float _y) override;
+    void OnLButtonDown(float _x, float _y) override;
+	void Load(const sqshControl* attr) override;
+	void OnWindow(int enable) override;
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -1077,19 +1120,20 @@ class CEditWindow : public CShellWindow
 //	cFont*   m_hFont;
 
 public:
-	CEditWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CEditWindow();
+	CEditWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CEditWindow() override;
 	float			txtdy;
 	Vect2f			uv;
 	Vect2f			dudv;
 
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
-	virtual void OnChar(char key);
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
+	void OnChar(char key) override;
 
-	virtual int  EffectSupported(){
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
+    
 	void SetText(const char* lpszText);
 	const char* GetText(){
 		return m_data.c_str();
@@ -1106,18 +1150,18 @@ protected:
 
 class CChatInGameEditWindow : public CEditWindow
 {
-	cTexture* m_hPopupTexture;
+	cTexture* m_hPopupTexture = nullptr;
 
 public:
-	CChatInGameEditWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CChatInGameEditWindow();
+	CChatInGameEditWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CChatInGameEditWindow() override;
 
 	void Load(const sqshControl* attr) override;
 
 	void draw(int bFocus) override;
 	void OnChar(char key) override;
 
-	bool alliesOnlyMode;
+	bool alliesOnlyMode = false;
 
     static const char* getModePostfix(bool clanOnly) {
 		return qdTextDB::instance().getText(clanOnly ? "Interface.Tips.ToClanPostfix" : "Interface.Tips.ToAllPostfix");
@@ -1143,14 +1187,14 @@ public:
 	Vect2f			uv;
 	Vect2f			dudv;
 
-	CComboWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CComboWindow();
-	virtual void draw(int bFocus);
-	virtual void OnLButtonUp(float _x, float _y);
-	virtual void OnRButtonUp(float _x, float _y);
-	virtual void Load(const sqshControl* attr);
-	virtual void OnWindow(int enable);
-	virtual int EffectSupported() {
+	CComboWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CComboWindow() override;
+	void draw(int bFocus) override;
+	void OnLButtonUp(float _x, float _y) override;
+	void OnRButtonUp(float _x, float _y) override;
+	void Load(const sqshControl* attr) override;
+	void OnWindow(int enable) override;
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -1162,14 +1206,14 @@ public:
 	sColor4f*	colors;
 	int			target;
 
-	CColorComboWindow(int id, CShellWindow* pParent, EVENTPROC p = 0);
-	~CColorComboWindow();
-	virtual void draw(int bFocus);
-	virtual void OnLButtonUp(float _x, float _y);
-	virtual void OnRButtonUp(float _x, float _y);
-	virtual void Load(const sqshControl* attr);
-	virtual void OnWindow(int enable);
-	virtual int EffectSupported() {
+	CColorComboWindow(int id, CShellWindow* pParent, EVENTPROC p = nullptr);
+	~CColorComboWindow() override;
+	void draw(int bFocus) override;
+	void OnLButtonUp(float _x, float _y) override;
+	void OnRButtonUp(float _x, float _y) override;
+	void Load(const sqshControl* attr) override;
+	void OnWindow(int enable) override;
+	int EffectSupported() override {
 		return effectButtonsFadeIn|effectButtonsFadeOut;
 	}
 };
@@ -1183,17 +1227,17 @@ public:
 
 	CSplashWindow(int id, CShellWindow* pParent, EVENTPROC p);
 
-	virtual void LoadMenuWnd(const sqshControlContainer* attr);
-	virtual void Show(int bShow);
-	virtual void draw(int bFocus);
-	virtual bool OnKeyDown(int key) {
+	void LoadMenuWnd(const sqshControlContainer* attr) override;
+	void Show(int bShow) override;
+	void draw(int bFocus) override;
+	bool OnKeyDown(int key) override {
 		if(m_handler && (state & SQSH_VISIBLE)) {
 			m_handler(this, EVENT_PRESSED, key );
 			return true;
 		}
 		return false;
 	}
-	virtual bool OnKeyUp(int key) {
+	bool OnKeyUp(int key) override {
 		if(m_handler && (state & SQSH_VISIBLE)) {
 			m_handler(this, EVENT_UNPRESSED, key );
 			return true;
@@ -1208,11 +1252,11 @@ public:
 class CGeneralWindow : public CShellWindow
 {
 public:
-	CGeneralWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p){}
+	CGeneralWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
 
-	virtual int  EffectSupported()	{ return effectButtonsFadeIn|effectButtonsFadeOut; }
-	virtual void draw(int bFocus);
-	virtual int  HitTest(float _x, float _y){
+	int  EffectSupported() override { return effectButtonsFadeIn|effectButtonsFadeOut; }
+    void draw(int bFocus) override;
+	int  HitTest(float _x, float _y) override {
 		return 0;
 	}
 };
@@ -1222,22 +1266,22 @@ public:
 class CProgressEnergy : public CShellWindow
 {
 public:
-	float showedProduced;
-	float showedUsed;
-	float xstart;
-	float arrowSx;
-	float arrowSy;
+	float showedProduced = 0.0f;
+	float showedUsed = 0.0f;
+	float xstart = 0.0f;
+	float arrowSx = 0.0f;
+	float arrowSy = 0.0f;
 
-	cTexture*		m_hTexture_h;
+	cTexture*		m_hTexture_h = nullptr;
 	Vect2f			m_vTexPos_h[2];
 
-	CProgressEnergy(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p), showedProduced(0), showedUsed(0), m_hTexture_h(0) {produced = 0; requested = 0;}
-	~CProgressEnergy();
+	CProgressEnergy(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
+	~CProgressEnergy() override;
 
-	virtual void draw(int bFocus);
-	virtual void OnWindow(int enable);
-	virtual void Load(const sqshControl* attr);
-	virtual int  HitTest(float _x, float _y) { return 0; };
+	void draw(int bFocus) override;
+	void OnWindow(int enable) override;
+	void Load(const sqshControl* attr) override;
+	int  HitTest(float _x, float _y) override { return 0; };
 	void setEnergyData(float newProduced, float newRequested) {
 		xassert(produced >= 0);
 		xassert(requested >= 0);
@@ -1246,21 +1290,21 @@ public:
 	}
 
 protected:
-	float produced;
-	float requested;
+	float produced = 0.0f;
+	float requested = 0.0f;
 };
 
 class CProgressCollected : public CShellWindow
 {
 public:
-	float showedDirection;
+	float showedDirection = 0.0f;
 	CProgressCollected(int id, CShellWindow* pParent, EVENTPROC p) 
-		: CShellWindow(id, pParent, p), showedDirection(0), 
-		produced(0), requested(0), capacity(0), accumulated(0) {}
+		: CShellWindow(id, pParent, p) {}
 
-	virtual void draw(int bFocus);
-	virtual void OnWindow(int enable);
-	virtual void Load(const sqshControl* attr);
+	void draw(int bFocus) override;
+	void OnWindow(int enable) override;
+	void Load(const sqshControl* attr) override;
+    
 	void setEnergyData(float newProduced, float newRequested, float newCapacity, float newAccumulated) {
 		produced = newProduced;
 		requested = newRequested;
@@ -1269,10 +1313,10 @@ public:
 	}
 
 protected:
-	float produced;
-	float requested;
-	float capacity;
-	float accumulated;
+	float produced = 0.0f;
+	float requested = 0.0f;
+	float capacity = 0.0f;
+	float accumulated = 0.0f;
 };
 
 class CProgressShield : public CShellWindow
@@ -1280,36 +1324,36 @@ class CProgressShield : public CShellWindow
 public:
 	CProgressShield(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p){}
 
-	virtual void draw(int bFocus);
-	virtual void OnWindow(int enable);
+	void draw(int bFocus) override;
+	void OnWindow(int enable) override;
 };
 class CProgressTerrain : public CShellWindow
 {
 public:
 	CProgressTerrain(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p){}
 
-	virtual void draw(int bFocus);
-	virtual void OnWindow(int enable);
+	void draw(int bFocus) override;
+	void OnWindow(int enable) override;
 };
 class CProgressMutation : public CShellWindow
 {
 public:
-	CProgressMutation(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p){}
+	CProgressMutation(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
 
-	virtual void draw(int bFocus);
-	virtual void OnWindow(int enable);
+	void draw(int bFocus) override;
+	void OnWindow(int enable) override;
 	void setMutationEnergy(float energy) {
 		mutationEnergy = energy;
 	}
 protected:
-	float mutationEnergy;
+	float mutationEnergy = 0.0f;
 };
 class CProgressUnitCharge : public CShellWindow
 {
 public:
-	CProgressUnitCharge(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p){chargeLevel = 0;}
+	CProgressUnitCharge(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
 
-	virtual void draw(int bFocus);
+	void draw(int bFocus) override;
 
 	void setParams(float newChargeLevel, bool isSpiralCharge) {
 		chargeLevel = newChargeLevel;
@@ -1317,57 +1361,56 @@ public:
 	}
 
 protected:
-	float chargeLevel;
-	bool isSpiral;
+	float chargeLevel = 0.0f;
+	bool isSpiral = false;
 };
 
 class CPlayerColorWnd : public CShellWindow {
-	public:
-		CPlayerColorWnd(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {
-		}
-		void draw(int bFocus) override;
+public:
+    CPlayerColorWnd(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
+    void draw(int bFocus) override;
 };
 
 
 class CScaleResultButton : public CScaleButton
 {
 public:
-	cTexture *m_hTexture4;
+	cTexture* m_hTexture4 = nullptr;
 	Vect2f	  m_vTex4Pos[2];
 
-	bool victory;
+	bool victory = false;
 
 	CScaleResultButton(int id, CShellWindow* pParent, EVENTPROC p);
-	~CScaleResultButton();
-	virtual void Load(const sqshControl* attr);
-	virtual void draw(int bFocus);
+	~CScaleResultButton() override;
+	void Load(const sqshControl* attr) override;
+	void draw(int bFocus) override;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //инвормационное окошко
 
-typedef void (*InfoWndFormatProcType)(char*, void*);
+typedef void (*InfoWndFormatProcType)(std::string&, void*);
 
 class CInfoWindow : public CShellWindow
 {
 	bool  m_bCentered;
 
-	char  m_cbText[255];
+	std::string  m_cbText;
 	int   m_nTimeToDisplay;
 
-	void*                  m_pParam;
-	InfoWndFormatProcType  m_pFmtProc;
+	void*                  m_pParam = nullptr;
+	InfoWndFormatProcType  m_pFmtProc = nullptr;
 
 public:
 	CInfoWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CInfoWindow();
+	~CInfoWindow() override;
 
-	void SetText(const char* cb, InfoWndFormatProcType proc = 0, void* param = 0);
+	void SetText(const char* cb, InfoWndFormatProcType proc = nullptr, void* param = nullptr);
 	void SetTime(int t);
 	void Centered(){
 		m_bCentered = true;
 	}
-	virtual void draw(int bFocus);
+	void draw(int bFocus) override;
 };
 
 class CHintWindow : public CShellWindow
@@ -1382,12 +1425,12 @@ class CHintWindow : public CShellWindow
 
 public:
 	CHintWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CHintWindow();
+	~CHintWindow() override;
 
-	void Load(const sqshControl* attr);
+	void Load(const sqshControl* attr) override;
 	void SetText(const char* cb, bool incremental = false);
 	void SetTime(int t);
-	virtual void draw(int bFocus);
+	void draw(int bFocus) override;
 	void drawHint(bool cutScene);
 };
 
@@ -1398,7 +1441,7 @@ class CChatInfoWindow : public ChatWindow
 
 public:
 	CChatInfoWindow(int id, CShellWindow* pParent, EVENTPROC p);
-	~CChatInfoWindow();
+	~CChatInfoWindow() override;
 
 	void setTime(int time) {
 		m_nTimeToDisplay = time;
@@ -1424,13 +1467,13 @@ class CNetLatencyInfoWindow : public CShellWindow
     std::string fullData;
     std::string briefData;
     bool on_window = false;
+    void updateLatencyInfo();
 
 public:
     CNetLatencyInfoWindow(int id, CShellWindow* pParent, EVENTPROC p);
-    ~CNetLatencyInfoWindow();
+    ~CNetLatencyInfoWindow() override;
 
     void Load(const sqshControl* attr) override;
-    void SetText(const std::string& brief, const std::string& full);
     void OnWindow(int enable) override;
     void draw(int bFocus) override;
 };
@@ -1441,11 +1484,10 @@ class CBackgroundWindow : public CShellWindow
 {
 
 public:
-	CBackgroundWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {
-	}
-	virtual int HitTest(float _x, float _y);
-
-	virtual void draw(int bFocus);
+	CBackgroundWindow(int id, CShellWindow* pParent, EVENTPROC p) : CShellWindow(id, pParent, p) {}
+    
+	int HitTest(float _x, float _y) override;
+	void draw(int bFocus) override;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1517,7 +1559,7 @@ public:
 	void OnMouseMove(float x, float y);
 
 	void draw();
-    static void DrawCursor(CShellCursor* cursor, int x, int y, float phase = 0, float scale = 1.0f);
+    static void DrawCursor(const CShellCursor* cursor, int x, int y, float phase = 0, float scale = 1.0f);
 
 	float GetSize();
 	void  SetSize(float sx);
@@ -1529,29 +1571,34 @@ public:
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //
 
-enum
-{
+enum DynQueueCode {
 	CBCODE_QUANT = 1, //задержка по времени в delay(ms)
 	CBCODE_MOUSEMOVE,
 	CBCODE_LBDOWN,
 	CBCODE_LBUP,
 	CBCODE_RBDOWN,
-	CBCODE_RBUP,
+    CBCODE_RBUP,
+    NUM_CBCODE_MAX,
 };
 
-struct DYN_QUEUE_ITEM
-{
-	DYNCALLBACK cbproc;
-	int         code;
-	int         time_delay;
-	char        bDelete;
+class DynQueue {
+    friend class CShellIconManager;
+    
+    struct DynQueueItem {
+        DYNCALLBACK cbproc = nullptr;
+        int time_delay = 0;
+        bool bDelete = false;
 
-
-	DYN_QUEUE_ITEM(DYNCALLBACK _p, int _c, int delay){
-		cbproc = _p; code = _c;
-		bDelete = 0;
-		time_delay = delay;
-	}
+        DynQueueItem(DYNCALLBACK _p, int delay) {
+            cbproc = _p;
+            bDelete = false;
+            time_delay = delay;
+        }
+    };
+    
+    MTSection lock;
+    bool empty = true;
+    std::list<DynQueueItem> items = {};
 };
 
 struct FRAME_TERRAIN_BUILD_DATA
@@ -1562,22 +1609,22 @@ struct FRAME_TERRAIN_BUILD_DATA
 };
 
 struct MiniMapEventIcon : public MiniMapEvent {
-	MiniMapEventIcon(const MiniMapEvent& ev) {
+	explicit MiniMapEventIcon(const MiniMapEvent& ev) {
 		code = ev.code;
 		pos = ev.pos;
 		timeRemain = eventSymbols[code].period;
 		animTime = eventSymbols[code].animTime;
 		period = timeRemain;
 	}
-	float timeRemain;
-	float period;
-	float animTime;
+	float timeRemain = 0.0f;
+	float period = 0.0f;
+	float animTime = 0.0f;
 };
 
 class CShellIconManager
 {
 	struct Task {
-		Task(std::string text, ActionTask::Type type) : text(text), type(type) {
+		Task(std::string text, ActionTask::Type type) : text(std::move(text)), type(type) {
 		}
 		std::string text;
 		ActionTask::Type type;
@@ -1612,8 +1659,8 @@ class CShellIconManager
 	void ClearSquadIconTable();
 
 	//dynamic handlers
-	std::list<DYN_QUEUE_ITEM> m_dyn_queue;
-	int ProcessDynQueue(int code, float x=0, float y=0);
+	DynQueue m_dyn_queues[NUM_CBCODE_MAX];
+	int ProcessDynQueue(DynQueueCode code, float x=0, float y=0);
 	void QuantDynQueue(int dt);
 
 	CShellWindow* HitTest(CShellWindow* pTop, float x, float y);
@@ -1655,7 +1702,7 @@ class CShellIconManager
 	int cutSceneAnimStep;
 	int cutSceneAnimTimer;
 
-	SpeechPlayer* speechSound;
+	class SpeechPlayer* speechSound;
 	bool resultMusicStarted;
 
 	void onCutSceneStart();
@@ -1670,6 +1717,8 @@ class CShellIconManager
 	};
 
 	CutSceneCommand cutSceneCommand;
+
+    bool interfaceShowFlag_;
 
 public:
 	std::string hold;
@@ -1715,21 +1764,24 @@ public:
 
 	CShellWindow* GetWnd(int id);
 	CShellWindow* CreateWnd(int id, ShellControlType type, CShellWindow* pParent = 0, EVENTPROC proc = 0);
+    void reloadDesktop();
 	void reload(CShellWindow* pTop);
 
 	bool isDynQueueEmpty();
 
-	void FormatUnitPopup(const AttributeBase* attr, char* cbBuffer, bool onControl, terUnitBase* unit);
-	char* FormatMessageText(const char* cbTag, char* cb, ...);
+	void FormatUnitPopup(const AttributeBase* attr, std::string& cbBuffer, bool onControl, terUnitBase* unit);
+	void FormatMessageText(const char* cbTag, std::string* cb, ...);
 
-	void AddDynamicHandler(DYNCALLBACK _p, int code, int delay = 0);
-	void DelDynamicHandler(DYNCALLBACK _p, int code);
-	bool HasDynamicHandler(DYNCALLBACK _p, int code);
+	void AddDynamicHandler(DYNCALLBACK _p, DynQueueCode code, int delay = 0);
+	void DelDynamicHandler(DYNCALLBACK _p, DynQueueCode code);
 
 	void SetFocus(int id);
-	void SetModalWnd(int id);
+    void SetModalWnd(int id);
+    CShellWindow* GetModalWnd();
 	int  IsFocusControl();
 	bool isInEditMode() const;
+    void toggleInterfaceShowFlag() { interfaceShowFlag_ = !interfaceShowFlag_; }
+    bool interfaceShowFlag() const { return interfaceShowFlag_; }
 
 	int OnLButtonDown(float x, float y);
 	int OnLButtonUp(float x, float y);
@@ -1754,12 +1806,8 @@ public:
 	void quant(float dTime);
 	void draw();
 
-	void ClearQueue(){
-		MTAuto dynQueue_autolock(&dynQueue_lock);
-		m_dyn_queue.clear();
-	}
 	inline int IsEffect()	{ return m_fEffectTime>=0; }
-	inline int IsInterface(){ return getDesktop() != 0;}
+	inline int IsInterface(){ return getDesktop() != nullptr;}
 
 	void ShowControls(int bShow, const ShellControlID ids[], int numIds);
 
@@ -1776,7 +1824,7 @@ public:
 	void UnEffectControls(CShellWindow* pWnd, int effect);
 	void fillTaskWnd();
 	CShellWindow* getDesktop() {
-		return cutSceneModeOn ? 0 : m_pDesktop;
+		return cutSceneModeOn ? nullptr : m_pDesktop;
 	}
 	bool isCutSceneMode() {
 		return cutSceneModeOn;
@@ -1833,8 +1881,6 @@ public:
 		CChatInfoWindow* chatInfo = (CChatInfoWindow*) controls[SQSH_CHAT_INFO_ID];
 		chatInfo->setTime(CHATINFO_VISIBLE_TIME_AFTER_HIDE_EDIT);
 	}
-
-	MTSection dynQueue_lock;
 };
 
 extern CShellIconManager   _shellIconManager;
@@ -1871,6 +1917,8 @@ void OnMapWindowClicked(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnButtonBrigadiers(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnButtonGotoBase(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
+void onGameTerminationRequest();
+
 //start / general
 void showSingleMenu(CShellWindow* pWnd);
 void onMMSingleButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
@@ -1890,6 +1938,13 @@ void onMMAddonsEnableCombo(CShellWindow* pWnd, InterfaceEventCode code, int para
 void onMMAddonsGuideButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMAddonsBackButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
+//control editor
+void onMMControlEditorButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void onMMControlEditorList(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void onMMControlEditorChange(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void onMMControlEditorRestore(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void onMMControlEditorDelete(CShellWindow* pWnd, InterfaceEventCode code, int param);
+
 //community
 void onMMCommunityButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
@@ -1901,6 +1956,7 @@ void onMMContinueBriefingButton(CShellWindow* pWnd, InterfaceEventCode code, int
 void onMMStartMissionButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMSkipMissionButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMSkipBriefingButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void onMMBriefingText(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMYearBriefing(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //single
@@ -1948,7 +2004,6 @@ void onMMInMissSaveButton(CShellWindow* pWnd, InterfaceEventCode code, int param
 void onMMInMissLoadButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMInMissOptionsButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMInMissRestartButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
-void onMMInMissResumeButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMInMissQuitButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //battle
@@ -1991,8 +2046,11 @@ void onMMDelSaveReplayButton(CShellWindow* pWnd, InterfaceEventCode code, int pa
 
 void onMMTaskButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
-//join game
+//multiplayer join
 void onMMMultiplayerJoinNextBtn(CShellWindow* pWnd, InterfaceEventCode code, int param);
+
+//multiplayer password
+void onMMMultiplayerPasswordNextBtn(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //multiplayer list
 void onMMMultiplayerListGameList(CShellWindow* pWnd, InterfaceEventCode code, int param);
@@ -2033,6 +2091,7 @@ void onMMGraphicsButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMSoundButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //submit dialog
+void onMMSubmitDialogBackground(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMSubmitYesButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onMMSubmitNoButton(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
@@ -2043,16 +2102,19 @@ void OnButtonOptionGraphics(CShellWindow* pWnd, InterfaceEventCode code, int par
 void OnButtonOptionSound(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnSliderSoundVolume(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnSliderMusicVolume(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void OnSliderVoiceVolume(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void OnSliderSpeechVolume(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //graphics
 void OnComboGraphicsUIAnchor(CShellWindow* pWnd, InterfaceEventCode code, int param);
+void OnComboGraphicsVSync(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsInputGrab(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsFog(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsSettings(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnGraphicsCustomBtn(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnGraphicsApplyBtn(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnSliderGraphicsGamma(CShellWindow* pWnd, InterfaceEventCode code, int param);
-void OnComboGraphicsColorDepth(CShellWindow* pWnd, InterfaceEventCode code, int param);
+//void OnComboGraphicsColorDepth(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsResolution(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 //custom
@@ -2063,7 +2125,6 @@ void onPointLightCombo(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onSamplesCombo(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onBumpCombo(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void onBumpChaosCombo(CShellWindow* pWnd, InterfaceEventCode code, int param);
-void onCompressCombo(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsFurrows(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsShadows(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGraphicsReflection(CShellWindow* pWnd, InterfaceEventCode code, int param);
@@ -2077,9 +2138,6 @@ void onMMInGameChatInputButton(CShellWindow* pWnd, InterfaceEventCode code, int 
 void OnIngameGraphicsCustomBtn(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 void OnComboGraphicsMode(CShellWindow* pWnd, InterfaceEventCode code, int param);
-
-void OnComboSoundMusic(CShellWindow* pWnd, InterfaceEventCode code, int param);
-void OnComboSoundEffects(CShellWindow* pWnd, InterfaceEventCode code, int param);
 
 void OnComboGameTooltips(CShellWindow* pWnd, InterfaceEventCode code, int param);
 void OnComboGameRunBackground(CShellWindow* pWnd, InterfaceEventCode code, int param);
@@ -2196,13 +2254,13 @@ inline void DrawSprite(int x, int y, int dx, int dy, float u, float v, float du,
 inline void DrawSprite2(int x, int y, int dx, int dy, float u, float v, float du, float dv,
 		cTexture *Tex1, cTexture *Tex2, const sColor4c &ColorMul = sColor4c(255,255,255,255), float phase = 0)
 {
-	terRenderDevice->DrawSprite2(x, y, dx, dy, u, v, du, dv, Tex1, Tex2, ColorMul, phase);
+    terRenderDevice->DrawSprite3(x, y, dx, dy, u, v, du, dv, Tex1, Tex2, ColorMul, phase);
 }
 
 inline void DrawSprite2(int x, int y, int dx, int dy, float u, float v, float du, float dv, float u1, float v1, float du1, float dv1,
 		cTexture *Tex1, cTexture *Tex2, const sColor4c &ColorMul = sColor4c(255,255,255,255), float phase = 0, eColorMode mode = COLOR_MOD)
 {
-	terRenderDevice->DrawSprite2(x, y, dx, dy, u, v, du, dv, u1, v1, du1, dv1, Tex1, Tex2, ColorMul, phase, mode);
+    terRenderDevice->DrawSprite3(x, y, dx, dy, u, v, du, dv, u1, v1, du1, dv1, Tex1, Tex2, ColorMul, phase, mode);
 //	terRenderDevice->DrawRectangle(relativeX(x), relativeY(y), relativeX(dx), relativeY(dy), sColor4c(255,255,0,255), true);
 }
 
@@ -2212,13 +2270,13 @@ inline void OutTextRect(int x,int y,const char *string,int align,Vect2f& bmin,Ve
 	terRenderDevice->OutTextRect(x, y, string, align, bmin, bmax);
 }
 
-inline void draw_line(const Vect2f& a, const Vect2f& b, const sColor4f& c = sColor4f(1, 1, 1, 1))
+inline void draw_line(const Vect2f& a, const Vect2f& b, const sColor4f& c = sColor4f(1, 1, 1, 1), float width = 1.0f)
 {
 	int x1 = a.x;
 	int x2 = b.x;
 	int y1 = a.y;
 	int y2 = b.y;
-	terRenderDevice->DrawLine(x1, y1, x2, y2, sColor4c(c));
+	terRenderDevice->DrawLine(x1, y1, x2, y2, sColor4c(c), width);
 }
 
 inline void draw_rect(const Vect2f& a, const Vect2f& b, const sColor4f& c = sColor4f(0, 0, 0, 1))

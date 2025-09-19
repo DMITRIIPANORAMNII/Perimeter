@@ -2,7 +2,6 @@
 #ifndef __PHYSICS_UTIL_H__
 #define __PHYSICS_UTIL_H__
 
-#include <strstream>
 #include "../XPrm/Statistics.h"
 #include "../Render/inc/Umath.h"
 
@@ -26,63 +25,72 @@ enum terStatisticsGroupType
 class ShowDispatcher
 {
 	class Shape {
+    public:
 		enum Type { Point, Text, Circle, Delta, Line, Triangle, Quadrangle, ConvexArray };
 		Type type;
-		sColor4c color;
-#if defined(_MSC_VER) && (_MSC_VER < 1900)
-		union {
-			struct { Vect3f point; float radius; };
-			struct { Vect3f pointX; const char* text; };
-			struct { Vect3f point1, point2; };
-			struct { int n_points; Vect3f* points; };
-			};
-#else
-		//TODO there is another way to reproduce above code in GCC?
-		Vect3f point;
-		float radius;
-		const char* text;
-        Vect3f point1;
-        Vect3f point2;
-		int n_points;
-		Vect3f* points;
-#endif
-		static bool isArray(Type type) { return type == Triangle || type == Quadrangle || type == ConvexArray; }
-	public:	
-		Shape(const Vect3f& v, sColor4c color_) { type = Point; point = v; color = color_; }
-		Shape(const Vect3f& v, const char* text_, sColor4c color_) { type = Text; point = v; text = strdup(text_); color = color_; }
-		Shape(const Vect3f& v, float radius_, sColor4c color_) { type = Circle; point = v; radius = radius_; color = color_; }
-		Shape(const Vect3f& v0, const Vect3f& v1, sColor4c color_, int line) { type = line ? Line : Delta; point1 = v0; point2 = v1; color = color_; }
-		Shape(const Vect3f& v0, const Vect3f& v1, const Vect3f& v2, sColor4c color_) { type = Triangle; points = new Vect3f[n_points = 3]; points[0] = v0; points[1] = v1; points[2] = v2; color = color_; }
-		Shape(const Vect3f& v0, const Vect3f& v1, const Vect3f& v2, const Vect3f& v3, sColor4c color_) { type = Quadrangle; points = new Vect3f[n_points = 4]; points[0] = v0; points[1] = v1; points[2] = v2; points[3] = v3; color = color_; }
-		Shape(int n_points_, const Vect3f* points_, sColor4c color_) { type = ConvexArray; points = new Vect3f[n_points = n_points_]; memcpy(points, points_, sizeof(Vect3f)*n_points); color = color_; }
-		Shape(const Shape& shape) 
-		{ 
-			*this = shape; 
-			if(isArray(type)){ 
-				points = new Vect3f[n_points = shape.n_points]; 
-				memcpy(points, shape.points, sizeof(Vect3f)*n_points); 
-			} 
-			else if(type == Text)
-				text = strdup(shape.text);
-		}
-		~Shape() { 
-			if(isArray(type)) 
-				delete points; 
-			else if(type == Text) 
-				free((void*)text); 
-		}
+		sColor4c color = {};
+		float radius = 1.0f;
+		std::string text = {};
+		std::vector<Vect3f> points = {};
+        unsigned int rendered_at = 0;
+        
+		Shape(const Vect3f& v, sColor4c color_) {
+            type = Point;
+            points.push_back(v);
+            color = color_;
+        }
+		Shape(const Vect3f& v, const char* text_, sColor4c color_) {
+            type = Text;
+            points.push_back(v);
+            text = text_;
+            color = color_;
+        }
+		Shape(const Vect3f& v, float radius_, sColor4c color_) {
+            type = Circle;
+            points.push_back(v);
+            radius = radius_;
+            color = color_;
+        }
+		Shape(const Vect3f& v0, const Vect3f& v1, sColor4c color_, int line) {
+            type = line ? Line : Delta;
+            points.push_back(v0);
+            points.push_back(v1);
+            color = color_;
+        }
+		Shape(const Vect3f& v0, const Vect3f& v1, const Vect3f& v2, sColor4c color_) {
+            type = Triangle;
+            points.push_back(v0);
+            points.push_back(v1);
+            points.push_back(v2);
+            color = color_; 
+        }
+		Shape(const Vect3f& v0, const Vect3f& v1, const Vect3f& v2, const Vect3f& v3, sColor4c color_) {
+            type = Quadrangle;
+            points.push_back(v0);
+            points.push_back(v1);
+            points.push_back(v2);
+            points.push_back(v3);
+            color = color_;
+        }
+		Shape(int n_points_, const Vect3f* points_, sColor4c color_) {
+            type = ConvexArray;
+            for (int i = 0; i < n_points_; i++) {
+                points.push_back(points_[i]);
+            }
+            color = color_;
+        }
+        
 		void show();
-		void showConvex();
-		};
-	typedef std::vector<Shape> List;
-	List shapes;
-	bool need_font;
+    };
+    
+    std::vector<Shape> shapes = {};
+    bool need_font = false;
 
 public:
 	void draw();
 	void clear() { shapes.clear(); need_font = false; }
 
-	void point(const Vect3f& v, sColor4c color) { shapes.push_back(Shape(v, color)); }
+	void point(const Vect3f& v, sColor4c color) { shapes.emplace_back(Shape(v, color)); }
 	void text(const Vect3f& v, const char* text, sColor4c color) { shapes.push_back(Shape(v, text, color)); need_font = true; }
 	void circle(const Vect3f& v, float radius, sColor4c color) { shapes.push_back(Shape(v, radius, color)); }
 	void line(const Vect3f &v0, const Vect3f &v1, sColor4c color) { shapes.push_back(Shape(v0, v1, color, 1)); }
@@ -143,14 +151,15 @@ void show_watch();
 //	save_log [time_to_exit:seconds]
 //	verify_log [append_log] [time_to_exit:seconds]
 //
-//	_FORCE_NET_LOG_ - to force network log under _FINAL_VERSION_
+//	_FORCE_NET_LOG_ - to force network log under non debug
 /////////////////////////////////////////////////////////////////////////////////
 
 #define _FORCE_NET_LOG_
 
-#if (!defined(_FINAL_VERSION_) || defined(PERIMETER_DEBUG) || defined(_FORCE_NET_LOG_)) && !defined(_GEOTOOL_)
+#if (defined(PERIMETER_DEBUG) || defined(_FORCE_NET_LOG_)) && !defined(_GEOTOOL_)
 #define _DO_LOG_
 //#define NET_LOG_EXHAUSTIVE
+//#define NET_LOG_WORLD
 #endif
 
 #ifdef _DO_LOG_
@@ -216,44 +225,19 @@ inline Vect3f to3D(const Vect2f& pos, float z) { return Vect3f(pos.x, pos.y, z);
 extern RandomGenerator logicRND;
 extern RandomGenerator terEffectRND;
 
-inline int logicRNDi(int x, const char* file, int line)
-{
-#ifdef NET_LOG_EXHAUSTIVE
-    std::string filename = std::filesystem::u8path(file).filename().u8string();
-    log_var(filename);
-    log_var(line);
-    log_var(logicRND.get());
-#endif
-	return logicRND(x);
-}
-inline float logicRNDf(const char* file, int line)
-{
-#ifdef NET_LOG_EXHAUSTIVE
-    std::string filename = std::filesystem::u8path(file).filename().u8string();
-    log_var(filename);
-    log_var(line);
-    log_var(logicRND.get());
-#endif
-	return logicRND.frnd();
-}
-inline float logicRNDfa(const char* file, int line)
-{
-#ifdef NET_LOG_EXHAUSTIVE
-    std::string filename = std::filesystem::u8path(file).filename().u8string();
-    log_var(filename);
-	log_var(line);
-	log_var(logicRND.get());
-#endif
-	return logicRND.frand();
-}
+int logicRNDi_internal(int x, const char* file, int line);
+float logicRNDf_internal(const char* file, int line);
+float logicRNDfa_internal(const char* file, int line);
 
-#define terLogicRND(x) logicRNDi(x, __FILE__, __LINE__)
+#define terLogicRND(x) logicRNDi_internal(x, __FILE__, __LINE__)
+
+#define terLogicRNDGenerator() RandomGenerator(terLogicRND(0x7FFF), true)
 
 //-1..+1
-#define terLogicRNDfrnd() logicRNDf(__FILE__, __LINE__)
+#define terLogicRNDfrnd() logicRNDf_internal(__FILE__, __LINE__)
 
 //0..+1
-#define terLogicRNDfrand() logicRNDfa(__FILE__, __LINE__)
+#define terLogicRNDfrand() logicRNDfa_internal(__FILE__, __LINE__)
 
 //--------------------------------------
 

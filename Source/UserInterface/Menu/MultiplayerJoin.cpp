@@ -1,10 +1,9 @@
 #include "StdAfx.h"
-#include "MainMenu.h"
 #include "GameShell.h"
 #include "PerimeterShellUI.h"
 #include "MessageBox.h"
 #include "MultiplayerCommon.h"
-
+#include "MainMenu.h"
 
 /// Join game to lobby handler
 
@@ -22,27 +21,25 @@ int toLobbyQuant( float, float ) {
     return 1;
 }
 
-
-int hideBoxToLobbyQuant( float, float ) {
-    if (menuChangingDone) {
-        hideMessageBox();
-        _shellIconManager.AddDynamicHandler( toLobbyQuant, CBCODE_QUANT );
-        return 0;
-    }
-    return 1;
-}
-
 ///Join handling
 
 void GameShell::callBack_JoinGameReturnCode(e_JoinGameReturnCode retCode, std::string extraInfo) {
     std::string textID;
+    bool returnMultiplayerList = false;
     switch (retCode) {
         case JG_RC_OK:
-            _shellIconManager.AddDynamicHandler( hideBoxToLobbyQuant, CBCODE_QUANT );
+            hideMessageBox();
+            _shellIconManager.AddDynamicHandler( toLobbyQuant, CBCODE_QUANT );
             return;
-        case JG_RC_CONNECTION_ERR:
+        case JG_RC_CONNECTION_ERR: {
             textID = "Interface.Menu.Messages.Multiplayer.ConnectionFailed";
+            int id = _shellIconManager.getVisibleMenuScr();
+            if (id == SQSH_MM_MULTIPLAYER_PASSWORD_SCR) {
+                //This means the room might be closed or unavailable, return back to list
+                returnMultiplayerList = true;
+            }
             break;
+        }
         case JG_RC_GAME_IS_RUN_ERR:
             textID = "Interface.Menu.Messages.Multiplayer.AlreadyRun";
             break;
@@ -64,8 +61,8 @@ void GameShell::callBack_JoinGameReturnCode(e_JoinGameReturnCode retCode, std::s
         case JG_RC_SIGNATURE_ERR:
             textID = "Interface.Menu.Messages.Multiplayer.SignatureError";
             break;
+        case JG_RC_UNKNOWN_ERR:
         default:
-            xassert(0);
             textID = "Interface.Menu.Messages.UnknownError";
             break;
     }
@@ -75,33 +72,29 @@ void GameShell::callBack_JoinGameReturnCode(e_JoinGameReturnCode retCode, std::s
         text += "\n\n" + extraInfo;
         printf("Connection response info: \n%s\n", text.c_str());
     }
-    dynamic_cast<CTextWindow*>(_shellIconManager.GetWnd(SQSH_MM_SUBMIT_TXT))->setText(text);
+    
+    setupOkMessageBox(
+            returnMultiplayerList ? exitToMultiplayerScreenAction : nullptr,
+            0,
+            text,
+            returnMultiplayerList ? MBOX_BACK : MBOX_OK
+    );
     showMessageBoxButtons();
-}
-
-int multiplayerJoinBackHandler( float, float ) {
-    //handles connection failed
-    gameShell->getNetClient()->FinishGame();
-    gameShell->getNetClient()->StartFindHost();
-    hideMessageBox();
-    return 1;
 }
 
 int joinHostHandler( float, float ) {
     if (menuChangingDone) {
+        CEditWindow* playerNameInput = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_NAME_INPUT));
+        std::string playerName = playerNameInput->GetText();
+        CEditWindow* passwordInput = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_PASSWORD_INPUT));
+        std::string password = passwordInput->getText();
         CEditWindow* addressInput = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_IP_INPUT));
         NetAddress conn;
-        bool resolveFailed = !NetAddress::resolve(conn, addressInput->getText());
-
-        if (resolveFailed) {
+        if (!NetAddress::resolve(conn, addressInput->getText())) {
             setMessageBoxTextID("Interface.Menu.Messages.IPEmpty");
             showMessageBoxButtons();
         } else {
-            CEditWindow* playerNameInput = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_NAME_INPUT));
-            std::string playerName = playerNameInput->GetText();
-            CEditWindow* passwordInput = dynamic_cast<CEditWindow*>(_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_PASSWORD_INPUT));
-            std::string password = passwordInput->getText();
-            gameShell->getNetClient()->JoinGame(conn, playerName, password);
+            gameShell->getNetClient()->JoinDirectGame(conn, playerName, password);
         }
         return 0;
     }
@@ -110,21 +103,21 @@ int joinHostHandler( float, float ) {
 
 void onMMMultiplayerJoinNextBtn(CShellWindow* pWnd, InterfaceEventCode code, int param) {
     if( code == EVENT_UNPRESSED && intfCanHandleInput() ) {
-        CEditWindow* input = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_NAME_INPUT);
-        CEditWindow* ipInput = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_IP_INPUT);
-        if (input->isEmptyText()) {
+        CEditWindow* name_input = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_NAME_INPUT);
+        CEditWindow* ip_input = (CEditWindow*)_shellIconManager.GetWnd(SQSH_MM_MULTIPLAYER_JOIN_IP_INPUT);
+        if (name_input->isEmptyText()) {
             setupOkMessageBox(nullptr, 0, qdTextDB::instance().getText("Interface.Menu.Messages.NameEmpty"), MBOX_OK);
             showMessageBox();
-		} else if (ipInput->isEmptyText()) {
+		} else if (ip_input->isEmptyText()) {
 			setupOkMessageBox(nullptr, 0, qdTextDB::instance().getText("Interface.Menu.Messages.IPEmpty"), MBOX_OK);
 			showMessageBox();
         } else {
-            putStringSettings(regLanName, input->getText());
-            putStringSettings("JoinIP", ipInput->getText());
+            putStringSettings(regLanName, name_input->getText());
+            putStringSettings("JoinIP", ip_input->getText());
             
-            setupOkMessageBox(multiplayerJoinBackHandler, 0, qdTextDB::instance().getText("Interface.Menu.Messages.Connecting"), MBOX_BACK, false);
+            setupOkMessageBox(nullptr, 0, qdTextDB::instance().getText("Interface.Menu.Messages.Connecting"), MBOX_OK, false);
             showMessageBox();
-
+            
             _shellIconManager.AddDynamicHandler( joinHostHandler, CBCODE_QUANT );
         }
     }

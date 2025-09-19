@@ -35,7 +35,8 @@ void ReelManager::showModal(const char* videoFileName, const char* soundFileName
 //	} else {
 //		player->SetVolume(0);
 	}
-	//player->SetVolume(max(terMusicVolume, terSoundVolume));
+    float vol = max(terMusicVolume, terVoiceVolume, terSpeechVolume);
+	player->SetVolume(vol);
 
 	std::string soundPath = soundFileName ? soundFileName : "";
 
@@ -45,6 +46,12 @@ void ReelManager::showModal(const char* videoFileName, const char* soundFileName
             fprintf(stderr, "showModal error opening sound %s\n", soundFileName);
         }
 	}
+
+#ifdef GPX
+	while (!player->IsEnd()) {
+		player->Update();
+	}
+#else
 
     Vect2i picSize;
 	Vect2i showPos;
@@ -122,7 +129,7 @@ void ReelManager::showModal(const char* videoFileName, const char* soundFileName
 	terRenderDevice->BeginScene();
 	terRenderDevice->EndScene();
 	terRenderDevice->Flush();
-
+#endif
 	delete player;
     player = NULL;
 	RELEASE(bgTexture);
@@ -195,4 +202,5 @@ void ReelManager::showPictureModal(const char* pictureFileName, int stableTime) 
 //	RELEASE(bgTexture);
 
 	hide();
+
 }

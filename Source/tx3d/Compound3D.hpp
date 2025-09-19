@@ -34,7 +34,7 @@ namespace tx3d {
 
 			Component(Texture3D *texture, bool shouldDegradate,	Location3D *location);
 
-			~Component();
+			~Component() override;
 
 			Texture3D* getTexture() const {
 				return texture;
@@ -55,11 +55,11 @@ namespace tx3d {
 			void zoom(float degree);
 			void zoomColor(float degree);
 
-			const string& getType() const {
+			const string& getType() const override {
 				return TYPE_NAME;
 			}
 
-			string paramString() const;
+			string paramString() const override;
 
 			bool shouldDegradate;
 

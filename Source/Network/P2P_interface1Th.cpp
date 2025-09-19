@@ -1,6 +1,7 @@
 #include "NetIncludes.h"
 
 #include "P2P_interface.h"
+#include "ServerList.h"
 
 #include <SDL.h>
 
@@ -9,7 +10,7 @@
 #include "files/files.h"
 #include "NetConnectionAux.h"
 #include "Runtime.h"
-#include "../HT/ht.h"
+#include "../HT/mt_config.h"
 
 #include <algorithm>
 #include "qd_textdb.h"
@@ -20,17 +21,24 @@ extern const char* currentShortVersion;
 const int NORMAL_QUANT_INTERVAL=100;
 const int PNETCENTER_BUFFER_SIZE = PERIMETER_MESSAGE_MAX_SIZE * 2;
 
-SDL_threadID net_thread_id=-1;
+std::atomic_uint64_t net_thread_id = -1;
 
 const char* PNetCenter::getStrState() const
 {
 	switch(m_state){
 	case		PNC_STATE__NONE:
 		return("PNC_STATE__NONE");
+    case		PNC_STATE__END:
+        return("PNC_STATE__END");
+    case		PNC_STATE__NET_CENTER_CRITICAL_ERROR:
+        return("PNC_STATE__NET_CENTER_CRITICAL_ERROR");
+    case		PNC_STATE__CLOSED:
+        return("PNC_STATE__CLOSED");
+    case		PNC_STATE__RESETTING:
+        return("PNC_STATE__RESETTING");
+            
 	case		PNC_STATE__CLIENT_FIND_HOST:
 		return("PNC_STATE__CLIENT_FIND_HOST");
-	case		PNC_STATE__CONNECTION:
-		return("PNC_STATE__CONNECTION");
 	case		PNC_STATE__CLIENT_TUNING_GAME:
 		return("PNC_STATE__CLIENT_TUNING_GAME");
 	case		PNC_STATE__CLIENT_LOADING_GAME:
@@ -44,11 +52,7 @@ const char* PNetCenter::getStrState() const
 		return("PNC_STATE__CLIENT_RESTORE_GAME_AFTE_CHANGE_HOST_PHASE_0");
 	case		PNC_STATE__CLIENT_RESTORE_GAME_AFTE_CHANGE_HOST_PHASE_AB:
 		return("PNC_STATE__CLIENT_RESTORE_GAME_AFTE_CHANGE_HOST_PHASE_AB");
-
-	case		PNC_STATE__END:
-		return("PNC_STATE__END");
-	case		PNC_STATE__NET_CENTER_CRITICAL_ERROR:
-		return("PNC_STATE__NET_CENTER_CRITICAL_ERROR");
+        
 	case		PNC_STATE__HOST_TUNING_GAME:
 		return("PNC_STATE__HOST_TUNING_GAME");
     case		PNC_STATE__HOST_SENDING_GAME:
@@ -76,26 +80,15 @@ in_ClientBuf(PNETCENTER_BUFFER_SIZE, true), out_ClientBuf(PNETCENTER_BUFFER_SIZE
 in_HostBuf(PNETCENTER_BUFFER_SIZE, true), out_HostBuf(PNETCENTER_BUFFER_SIZE, true),
 connectionHandler(this)
 {
-    publicServerHost=false;
     hostConnection=NetAddress();
 
     m_hostNETID = m_localNETID = NETID_NONE;
-	
-    flag_connected=false;
-	flag_NetworkSimulation=false;
-	if(IniManager("Network.ini").getInt("General", "NetworkSimulator")) flag_NetworkSimulation=true;
-	flag_HostMigrate=false;
-	if(IniManager("Network.ini").getInt("General", "HostMigrate")) flag_HostMigrate=true;
-	flag_NoUseDPNSVR=false;
-	if(IniManager("Network.ini").getInt("General", "NoUseDPNSVR")) flag_NoUseDPNSVR=true;
-
-	m_DPSigningLevel=0;
-	m_DPSigningLevel=IniManager("Network.ini").getInt("General", "DPSigningLevel");
-
 
 	m_clients.reserve(NETWORK_PLAYERS_MAX);
 
 	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
+    serverList = new ServerList();
 
 
 	flag_LockIputPacket=0;
@@ -144,37 +137,45 @@ connectionHandler(this)
 	hCommandExecuted=CreateEvent(0, true, false, 0);
 
     hSecondThread = CreateEvent(0, true, false, 0);
-    SDL_Thread* thread = SDL_CreateThread(InternalServerThread, "perimeter_server_thread", this);
-    if (thread == nullptr) {
-        SDL_FATAL_ERROR("SDL_CreateThread perimeter_server_thread failed");
-    }
-    SDL_DetachThread(thread);
+    if (MTConfig::multithreading()) {
+        xassert(net_thread_id == -1);
+        SDL_Thread *thread = SDL_CreateThread(InternalServerThreadInit, "perimeter_server_thread", this);
+        if (thread == nullptr) {
+            SDL_FATAL_ERROR("SDL_CreateThread perimeter_server_thread failed");
+        }
+        SDL_DetachThread(thread);
 
-	if(WaitForSingleObject(hSecondThreadInitComplete, INFINITE) != WAIT_OBJECT_0) {
-		xassert(0&&"NetCenter:Error second thread init");
-		ErrH.Abort("Network: General error 1!");
-	}
-    xassert(net_thread_id == SDL_GetThreadID(thread));
+        if(WaitForSingleObject(hSecondThreadInitComplete, INFINITE) != WAIT_OBJECT_0) {
+            xassert(0&&"NetCenter:Error second thread init");
+            ErrH.Abort("Network: General error 1!");
+        }
+        xassert(net_thread_id != -1);
+    } else {
+        InternalServerThreadInit(this);
+    }
+
 
 	lastTimeServerPacket=clocki();
 
     LogMsg("Created PNetCenter\n");
 }
 
-
+extern PNetCenter* netCenter;
 PNetCenter::~PNetCenter()
 {
+    netCenter = nullptr;
 	ExecuteInternalCommand(PNC_COMMAND__END, true);
-	const unsigned int TIMEOUT=5000;// ms
-	if( WaitForSingleObject(hSecondThread, TIMEOUT) != WAIT_OBJECT_0) {
-        LogMsg("Net Thread terminated!!!\n");
+	if(MTConfig::multithreading() && WaitForSingleObject(hSecondThread, 5000) != WAIT_OBJECT_0) {
+        LogMsg("PNetCenter::~PNetCenter(): InternalServerThread deadlock!!!\n");
 		xassert(0);
-        SetEvent(hSecondThread); //TODO not sure if this even necessary
 	}
+
+    serverList->stopFind();
+    SetConnectionTimeout(1); // For quick termination
+    connectionHandler.reset();
 
 	ClearClients();
 
-	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ClearInputPacketList();
 
 
@@ -199,51 +200,28 @@ PNetCenter::~PNetCenter()
     for (auto cmd : interfaceCommandList) {
         delete cmd;
     }
+    
+    if (serverList) {
+        delete serverList;
+        serverList = nullptr;
+    }
 
     LogMsg("Destroyed PNetCenter\n");
 }
 
 //////////////////////////////////////////////
-/// Current game info getters
-
-const char* PNetCenter::getMissionName() {
-	if (!isHost()) return ""; 
-    return hostMissionDescription->missionName().c_str();
-}
-
-const char* PNetCenter::getGameName() {
-	if (!isHost()) return ""; 
-    return m_GameName.c_str();
-}
-
-const char* PNetCenter::getGameVer() {
-	return currentShortVersion;
-}
-
-int PNetCenter::getNumPlayers() {
-	if(!isHost()) return 0; 
-    return hostMissionDescription->playersAmount();
-}
-
-int PNetCenter::getMaxPlayers() {
-	if(!isHost()) return 0; 
-    return hostMissionDescription->playersMaxEasily();//playersAmountScenarioMax();
-}
-
-int PNetCenter::getHostPort() {
-	if(!isHost()) return 0; 
-    return hostConnection.addr.port;
-}
-
-//////////////////////////////////////////////
 /// New network game creation or joining
 
-void PNetCenter::CreateGame(const NetAddress& connection, const std::string& gameName, MissionDescription* mission, const std::string& playerName, const std::string& password)
-{
+void PNetCenter::CreateGame(
+        bool isPublicGame, const NetAddress& connection,
+        const std::string& gameName, MissionDescription* mission,
+        const std::string& playerName, const std::string& password
+) {
     LogMsg("Create Game\n");
 	clientPause=false;
 	clientInPacketPause=false;
     hostConnection = connection;
+    clientRoom = 0;
     gamePassword = password;
 
 	m_quantInterval=NORMAL_QUANT_INTERVAL; //xm::round((float)NORMAL_QUANT_INTERVAL/gameSpeed);
@@ -252,27 +230,47 @@ void PNetCenter::CreateGame(const NetAddress& connection, const std::string& gam
     xassert(mission);
     hostMissionDescription = mission;
 
-    //Argument PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST
+    //Arguments for:
+    // PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST
+    // PNC_COMMAND__CONNECT_RELAY_AND_CREATE_GAME_AND_STOP_FIND_HOST
     
 	m_GameName = gameName;
 	m_PlayerName = playerName;
-	ExecuteInternalCommand(PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST, true);
+	ExecuteInternalCommand(
+            isPublicGame ? PNC_COMMAND__CONNECT_RELAY_AND_CREATE_GAME_AND_STOP_FIND_HOST
+            : PNC_COMMAND__START_HOST_AND_CREATE_GAME_AND_STOP_FIND_HOST,
+            true
+    );
 
     gameShell->callBack_CreateGameReturnCode(isConnected() ? GameShell::CG_RC_OK : GameShell::CG_RC_CREATE_HOST_ERR);
 }
 
-void PNetCenter::JoinGame(const NetAddress& connection, const std::string& playerName, const std::string& password)
+void PNetCenter::JoinDirectGame(const NetAddress& connection, const std::string& playerName, const std::string& password)
 {
-	LogMsg("Join Game\n");
-	clientPause = false;
-	clientInPacketPause=false;
+    LogMsg("Join Direct Game\n");
+    clientPause = false;
+    clientInPacketPause=false;
     hostConnection = connection;
+    clientRoom = 0;
     gamePassword = password;
 
-	//Argument  PNC_COMMAND__CONNECT_2_HOST_AND_STOP_FIND_HOST
-	m_PlayerName = playerName;
-	//internalIP установлен ранее
-	ExecuteInternalCommand(PNC_COMMAND__CONNECT_2_HOST_AND_STOP_FIND_HOST, false);
+    //Argument  PNC_COMMAND__CONNECT_2_HOST_AND_STOP_FIND_HOST
+    m_PlayerName = playerName;
+    //internalIP установлен ранее
+    ExecuteInternalCommand(PNC_COMMAND__CONNECT_2_HOST_AND_STOP_FIND_HOST, false);
+}
+
+void PNetCenter::JoinPublicRoomGame(const NetAddress& connection, NetRoomID room_id, const std::string& playerName, const std::string& password) {
+    LogMsg("Join Public Room Game\n");
+    clientPause = false;
+    clientInPacketPause=false;
+    hostConnection = connection;
+    clientRoom = room_id;
+    gamePassword = password;
+
+    //Argument  PNC_COMMAND__CONNECT_2_RELAY_ROOM_AND_STOP_FIND_HOST
+    m_PlayerName = playerName;
+    ExecuteInternalCommand(PNC_COMMAND__CONNECT_2_RELAY_ROOM_AND_STOP_FIND_HOST, false);
 }
 
 //////////////////////////////////////////////
@@ -315,25 +313,28 @@ void PNetCenter::HandlerInputNetCommand()
 				}
 			}
 			break;
-		case NETCOM_4C_ID_JOIN_RESPONSE:
-			{
-				//netCommand4C_JoinResponse ncjr(in_ClientBuf);
-				//m_playerNETID=ncjr.playerNETID_;
-			}
-			break;
 		case NETCOM_4C_ID_START_LOAD_GAME:
 			{
 				netCommand4C_StartLoadGame nc4c_sl(in_ClientBuf);
                 if (nc4c_sl.missionDescription_ == nullptr) {
+                    //Not yet the real start but about to start
                     gameShell->MultiplayerGameStarting();
                 } else {
                     //Transfer mission from packet
                     clientMissionDescription = nc4c_sl.missionDescription_;
                     nc4c_sl.missionDescription_ = nullptr;
-
+                    
+                    //Set active player as ourselves
+                    int playerIndex = clientMissionDescription->findPlayer(m_localNETID);
+                    if (0 <= playerIndex) {
+                        clientMissionDescription->activePlayerID = clientMissionDescription->playersData[playerIndex].playerID;
+                    }
+                    
                     m_bStarted = true;
 
-                    ///if(!isHost()) ExecuteInternalCommand(PNC_COMMAND__CLIENT_STARTING_LOAD_GAME, false);
+                    if (!isHost()) {
+                        ExecuteInternalCommand(PNC_COMMAND__CLIENT_STARTING_LOAD_GAME, false);
+                    }
                     //game_shell.GameStart(ncbc.missionDescription_);
                     gameShell->MultiplayerGameStart(*clientMissionDescription);
                 }
@@ -341,7 +342,16 @@ void PNetCenter::HandlerInputNetCommand()
 			break;
         case NETCOM_4G_ID_EXIT: {
             netCommand4G_Exit nc4g_exit(in_ClientBuf);
-            ExitClient(nc4g_exit.netid);
+            //Host already does this before relaying to itself
+            if (!isHost()) {
+                if (nc4g_exit.netid == m_localNETID && nc4g_exit.reason == netCommand4G_Exit::EXITREASON_KICKED) {
+                    ExecuteInternalCommand(PNC_COMMAND__RESET, false);
+                    ExecuteInterfaceCommand(PNC_INTERFACE_COMMAND_KICKED);
+                } else {
+                    bool normal = nc4g_exit.reason == netCommand4G_Exit::EXITREASON_NORMAL;
+                    DeleteClient(nc4g_exit.netid, normal);
+                }
+            }
             break;
         }
 		case NETCOM_4C_ID_PAUSE:
@@ -400,7 +410,7 @@ void PNetCenter::HandlerInputNetCommand()
                 rsp.timestamp = nc.info.timestamp;
                 SendEventSync(&rsp);
                 
-                gameShell->updateLatencyInfo(nc.info);
+                gameShell->updateLatencyInfo(nc.info, clientMissionDescription);
 			}
 			break;
 		case NETCOM_4C_ID_CLIENT_IS_NOT_RESPONCE:
@@ -416,66 +426,17 @@ void PNetCenter::HandlerInputNetCommand()
 			break;
         case NETCOM_4C_ID_DESYNC_NOTIFY: {
             netCommand4C_DesyncNotify nc(in_ClientBuf);
+            fprintf(stderr, "NETCOM_4C_ID_DESYNC_NOTIFY\n");
             
-            if (nc.desync_amount > PNC_DESYNC_RESTORE_ATTEMPTS) {
+            
+            if (nc.data.desync_amount > PNC_DESYNC_RESTORE_ATTEMPTS) {
                 ExecuteInterfaceCommand(PNC_INTERFACE_COMMAND_DESYNC);
-            } else {
+            } else {                
                 if (!isHost()) {
                     ExecuteInternalCommand(PNC_COMMAND__DESYNC, false);
                 }
-
-                std::string crash_dir = CRASH_DIR;
-                terminate_with_char(crash_dir, PATH_SEP);
-                crash_dir += "desync_" + nc.gameID + "_" + std::to_string(m_localNETID) + PATH_SEP;
-                create_directories(crash_dir);
-
-                //Write net log
-                XBuffer netlog(2048, true);
-                netlog < currentVersion < "\r\n";
-                netlog < "ArchFlags: " <= NetConnectionInfo::computeArchFlags();
-                netlog < " HostNETID: " <= m_hostNETID;
-                netlog < " LocalNETID: " <= m_localNETID;
-                netlog < " Amount: " <= nc.desync_amount;
-                netlog < "\r\n";
-                universe()->writeLogList2Buffer(netlog);
-                XStream f(crash_dir + "netlog.txt", XS_OUT);
-                f.write(netlog.address(), netlog.tell());
-                f.close();
-                universe()->clearLogList();
-
-                //Attempt to save state
-                gameShell->savePrm().manualData.clearSoundTracks(); //Avoid host overriding client soundtracks
-                std::unique_ptr<MissionDescription> md = std::make_unique<MissionDescription>();
-                gameShell->universalSave((crash_dir + "save").c_str(), true, md.get());
-
-                //Attempt to save reel
-                universe()->savePlayReel((crash_dir + "reel").c_str());
-
-                fprintf(stderr, "%d Error network synchronization, dumped at: %s\n", clocki(), crash_dir.c_str());
-
-                std::unique_ptr<LocalizedText> text = std::make_unique<LocalizedText>(
-                        qdTextDB::instance().getText("Interface.Menu.Messages.Multiplayer.Nonsinchronization"),
-                        getLocale()
-                );
-                text->text += " " + std::to_string(nc.desync_amount);
-                ExecuteInterfaceCommand(
-                        PNC_INTERFACE_COMMAND_INFO_MESSAGE,
-                        std::move(text)
-                );
-
-                //Do not send binary and script data to host except host itself
-                //Also trim some data in partial mode
-                if (m_localNETID != m_hostNETID || nc.desync_amount < PNC_DESYNC_RESTORE_MODE_FULL) {
-                    md->binaryData.alloc(0);
-                    md->scriptsData.alloc(0);
-                }
-
-                md->setSaveName("");
                 
-                //Send the ack
-                netCommand4H_DesyncAcknowledge ack(std::move(md));
-                std::swap(ack.netlog, netlog);
-                SendEventSync(&ack);
+                gameShell->MultiplayerGameDesyncNotify(nc.data);
             }
             break;
         }
@@ -499,12 +460,6 @@ void PNetCenter::HandlerInputNetCommand()
             clientMissionDescription->gameType_ = GT_MULTI_PLAYER_LOAD;
         
             LogMsg("Desync Restore attempt %d\n", nc.desync_amount);
-            
-            if (!isHost()) {
-                //Return to usual client business
-                m_state = PNC_STATE__CLIENT_GAME;
-                flag_SkipProcessingGameCommand = false;
-            }
 
             break;
         }
@@ -551,24 +506,28 @@ void PNetCenter::P2PIQuant()
             delete cmd;
         }
 
-		serverList.refreshHostInfoList();
+        if (!isConnected()) {
+            serverList->refreshHostInfoList();
+        }
 
 		HandlerInputNetCommand();
 	}
 
 //	void playerDisconnected(string& playerName, bool disconnectOrExit);
 
+    bool end_game = false;
 	switch(curInterfaceCommand.icID){
 	case PNC_INTERFACE_COMMAND_NONE:
 		break;
 	case PNC_INTERFACE_COMMAND_INFO_PLAYER_DISCONNECTED:
     case PNC_INTERFACE_COMMAND_INFO_PLAYER_EXIT: {
         bool disconnected = curInterfaceCommand.icID == PNC_INTERFACE_COMMAND_INFO_PLAYER_DISCONNECTED;
-        std::string res = qdTextDB::instance().getText(disconnected ? "Interface.Menu.Messages.PlayersDisconnected"
+        const char* res = qdTextDB::instance().getText(disconnected ? "Interface.Menu.Messages.PlayersDisconnected"
                                                                     : "Interface.Menu.Messages.PlayersExited");
         const int bufferSize = 500;
         static char tempBuffer[bufferSize];
-        snprintf(tempBuffer, bufferSize, res.c_str(), curInterfaceCommand.text->text.c_str());
+        std::string name = curInterfaceCommand.text->text + "&FFFFFF";
+        snprintf(tempBuffer, bufferSize, res, name.c_str());
         curInterfaceCommand.text->text = tempBuffer;
         gameShell->serverMessage(curInterfaceCommand.text.get());
         break;
@@ -579,27 +538,31 @@ void PNetCenter::P2PIQuant()
 	case PNC_INTERFACE_COMMAND_CONNECTION_FAILED:
 		//gameShell->abnormalNetCenterTermination();
 		gameShell->generalErrorOccured(GameShell::GENERAL_CONNECTION_FAILED);
-		ExecuteInternalCommand(PNC_COMMAND__END_GAME, true);
-		//ExecuteInternalCommand(PNC_COMMAND__END, true);
+        end_game = true;
 		break;
-	case PNC_INTERFACE_COMMAND_CONNECTION_DROPPED:
-		gameShell->generalErrorOccured(GameShell::CLIENT_DROPPED);
-		ExecuteInternalCommand(PNC_COMMAND__END_GAME, true);
+	case PNC_INTERFACE_COMMAND_KICKED:
+		gameShell->generalErrorOccured(GameShell::KICKED);
+        end_game = true;
 		break;
 	case PNC_INTERFACE_COMMAND_HOST_TERMINATED_GAME:
 		gameShell->generalErrorOccured(GameShell::HOST_TERMINATED);
-		ExecuteInternalCommand(PNC_COMMAND__END_GAME, true);
+        end_game = true;
 		break;
     case PNC_INTERFACE_COMMAND_DESYNC:
         gameShell->generalErrorOccured(GameShell::DESYNC);
+        gameShell->CurrentMission.PrintInfo();
         break;
 	case PNC_INTERFACE_COMMAND_CRITICAL_ERROR_GAME_TERMINATED:
 		xassert(0&& "Host stoping, game ending");
 		gameShell->generalErrorOccured(GameShell::GENERAL_CONNECTION_FAILED);
-		ExecuteInternalCommand(PNC_COMMAND__END_GAME, true);
+        gameShell->CurrentMission.PrintInfo();
+        end_game = true;
         break;
 	}
 
+    if (end_game && m_bStarted) {
+        ExecuteInternalCommand(PNC_COMMAND__RESET, true);
+    }
 
 //	if(m_state==PNC_STATE__NET_CENTER_CRITICAL_ERROR) {
 //		const unsigned int TIMEOUT=5000;// ms
@@ -611,7 +574,7 @@ void PNetCenter::P2PIQuant()
 //	}
 
 	/// Pause
-	if( (!clientPause) && m_state!=PNC_STATE__NONE){
+	if( (!clientPause) && m_bStarted){
 		if( gameShell->GameActive /*&& (!isHost())*/ ){
 			if(clientInPacketPause){
 				if(clocki() <= lastTimeServerPacket+TIMEOUT_CLIENT_OR_SERVER_RECEIVE_INFORMATION){
@@ -727,30 +690,21 @@ void PNetCenter::GameIsReady()
     clientMissionDescription->clearData();
 	netCommandC_PlayerReady event2(vMap.getWorldCRC());
 	SendEventSync(&event2);
+    if (!isHost()) {
+        ExecuteInternalCommand(PNC_COMMAND__CLIENT_GAME_IS_READY, false);
+    }
 }
 
-std::vector<GameHostInfo>& PNetCenter::getGameHostList()
-{
-	return serverList.gameHostInfoList;
+size_t PNetCenter::getRelaysCount() const {
+    return serverList->getRelays().size();
+}
+
+const std::vector<GameInfo>& PNetCenter::getGameList() const {
+	return serverList->getList();
 }
 
 /////////////////////////////////////////////////////////////////
-void PNetCenter::FinishGame()
+void PNetCenter::Reset()
 {
-	ExecuteInternalCommand(PNC_COMMAND__END_GAME, true);
-}
-
-void PNetCenter::StartFindHost()
-{
-	ExecuteInternalCommand(PNC_COMMAND__START_FIND_HOST, true);
-}
-
-void PNetCenter::DisconnectAndStartFindHost()
-{
-	ExecuteInternalCommand(PNC_COMMAND__DISCONNECT_AND_ABORT_GAME_AND_END_START_FIND_HOST, true);
-}
-
-void PNetCenter::StopServerAndStartFindHost()
-{
-	ExecuteInternalCommand(PNC_COMMAND__STOP_HOST_AND_ABORT_GAME_AND_START_FIND_HOST, true);
+    ExecuteInternalCommand(PNC_COMMAND__RESET, true);
 }

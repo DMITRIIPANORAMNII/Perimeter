@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.16.0)
 
 # root
-PROJECT(perimeter VERSION 3.0.11)
+PROJECT(perimeter VERSION 3.1.10)
 message("Version ${PROJECT_VERSION}")
 
 SET(CMAKE_CONFIGURATION_TYPES "Release;Debug;MinSizeRel;RelWithDebInfo")
@@ -20,7 +20,6 @@ OPTION(OPTION_FINAL_VERSION "Generate Final version" ON)
 OPTION(OPTION_STATIC_BUILD "Generate static build" OFF)
 OPTION(OPTION_STATIC_LIB_STD "Statically link to libstd++" ON)
 OPTION(OPTION_CHECK_SCRIPTS "Check game scripts with XPrm" OFF)
-OPTION(OPTION_PROCESS_SCRIPTS "Re-Process game scripts with XPrm" OFF)
 OPTION(OPTION_DISABLE_STACKTRACE "Disable stacktrace support" OFF)
 OPTION(OPTION_LINKER "Use specified linker instead of default" "")
 OPTION(OPTION_DEBUG_ASSERT "Enable debug assertions" OFF)
@@ -28,13 +27,15 @@ OPTION(OPTION_GPERFTOOLS "Link executable with gperftools for debugging" OFF)
 OPTION(OPTION_D3D9 "Enable D3D9 renderer using dxvk in *nix or DirectX in Windows" ON)
 OPTION(OPTION_LINK_LIBS "Link executables with provided libraries, placed before the rest" "")
 OPTION(OPTION_LINK_LIBS_POST "Link executables with provided libraries, placed after the rest" "")
-OPTION(OPTION_DXVK_1 "Use old DXVK-native (DXVK 1.x) instead of DXVK 2.x" OFF)
-OPTION(OPTION_DXVK_SOURCE_DIR "Path for predownloaded DXVK source code")
-OPTION(OPTION_SOKOL "Enable Sokol GFX based renderer" OFF)
-OPTION(OPTION_PROCESS_SHADERS "Re-Process game shaders" OFF)
+OPTION(OPTION_SOKOL "Enable Sokol GFX based renderer" ON)
 OPTION(OPTION_FFMPEG_MOVIES "Use FFMPEG to decode ingame movies" ON)
 OPTION(OPTION_ASAN "Enable AddressSanitizer" OFF)
+OPTION(OPTION_SANITIZE "Pass -fsanitizer" OFF)
 OPTION(OPTION_O0 "Disable optimizations" OFF)
+OPTION(OPTION_SDL "What SDL version to use" "")
+if (NOT OPTION_SDL)
+    set(OPTION_SDL "SDL2")
+endif ()
 
 # Compiler detections
 SET(MSVC_CL_BUILD OFF)
@@ -72,12 +73,11 @@ IF(CMAKE_HOST_WIN32 OR MINGW)
     SET(PERIMETER_WINDOWS ON)
     #Compile exe as Win32 App instead of Console App
     #Also add icon via .rc
-    SET(PERIMETER_EXE_FLAGS WIN32 perimeter.rc)
+    SET(PERIMETER_EXE_FLAGS WIN32 "${PROJECT_SOURCE_DIR}/Source/perimeter.rc")
 ELSE()
     MESSAGE("Not Windows or MinGW build - WARNING: EXPERIMENTAL!")
     SET(PERIMETER_WINDOWS OFF)
     SET(PERIMETER_EXODUS ON)
-    SET(PERIMETER_EXODUS_SOUND ON)
 ENDIF()
 
 IF (OPTION_D3D9)
@@ -99,6 +99,7 @@ INCLUDE(FetchContent)
 INCLUDE(ExternalProject)
 
 #Is a debug build?
+message("Build type: ${CMAKE_BUILD_TYPE}")
 SET(PERIMETER_DEBUG OFF)
 IF(CMAKE_BUILD_TYPE MATCHES Debug)
     SET(PERIMETER_DEBUG ON)
@@ -159,12 +160,8 @@ IF(OPTION_LINK_LIBS_POST)
         SET(EXE_LINK_LIBS_POST ${EXE_LINK_LIBS_POST} "${LINK_LIB}")
     ENDFOREACH()
 ENDIF()
-IF(MINGW)
-    #Required for static SDL2 linking
-    SET(EXE_LINK_LIBS_POST ${EXE_LINK_LIBS_POST} "winmm;imm32;setupapi;version;ws2_32;iphlpapi")
-ENDIF()
 IF(OPTION_STATIC_LIB_STD)
-    IF (NOT MSVC_CL_BUILD)
+    IF (NOT MSVC_CL_BUILD AND NOT APPLE)
         MESSAGE("Linking libstd statically")
         set(LINK_FLAGS "-static-libstdc++")
         IF (NOT CLANG)
@@ -194,8 +191,10 @@ IF(NOT MSVC_CL_BUILD)
         "C:/MinGW"
         "/usr/include/x86_64-linux-gnu"
         "/usr/include/aarch64-linux-gnu"
+        "/usr/include/e2k-linux-gnu"
         "/usr/lib/x86_64-linux-gnu"
         "/usr/lib/aarch64-linux-gnu"
+        "/usr/lib/e2k-linux-gnu"
     )
 ENDIF()
 # Dependencies
@@ -205,27 +204,11 @@ IF(NOT APPLE)
 ENDIF()
 FIND_PACKAGE(ZLIB REQUIRED)
 SET(CMAKE_FIND_LIBRARY_SUFFIXES ${PREFER_DYNAMIC_LIBRARY_SUFFIXES})
-FIND_PACKAGE(Boost REQUIRED)
-IF(MSVC_CL_BUILD)
-    #Specifics to MSVC+VCPKG
-    FIND_PACKAGE(SDL2 CONFIG REQUIRED)
-    SET(SDL2_INCLUDE_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/SDL2")
-    SET(SDL2_LIBRARY SDL2::SDL2) 
-    SET(SDL2MAIN_LIBRARY SDL2::SDL2main)
-    FIND_PACKAGE(SDL2_image CONFIG REQUIRED)
-    SET(SDL2_IMAGE_LIBRARY $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>)
-    FIND_PACKAGE(SDL2_mixer CONFIG REQUIRED)
-    SET(SDL2_MIXER_LIBRARY $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>)
-    FIND_PACKAGE(SDL2_net CONFIG REQUIRED)
-    SET(SDL2_NET_LIBRARY $<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,SDL2_net::SDL2_net,SDL2_net::SDL2_net-static>)
-ELSE()
-    SET(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-    
-    FIND_PACKAGE(SDL2 REQUIRED)
-    FIND_PACKAGE(SDL2-image REQUIRED)
-    FIND_PACKAGE(SDL2-mixer REQUIRED)
-    FIND_PACKAGE(SDL2-net REQUIRED)
-ENDIF()
+if (NOT MSVC_CL_BUILD)
+    set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+endif ()
+
+include(cmake/SetupSDL.cmake)
 
 #FFMPEG used for AVI and video decoding if present
 IF (PERIMETER_WINDOWS)
@@ -236,13 +219,6 @@ ELSE()
 ENDIF()
 
 # globals
-INCLUDE_DIRECTORIES(SYSTEM
-    ${Boost_INCLUDE_DIRS}
-    ${SDL2_INCLUDE_DIR}
-    ${SDL2_IMAGE_INCLUDE_DIR}
-    ${SDL2_MIXER_INCLUDE_DIR}
-    ${SDL2_NET_INCLUDE_DIR}
-)
 SET(PERIMETER_COMPILE_OPTIONS)
 
 IF(FFMPEG_FOUND)
@@ -254,10 +230,10 @@ IF(FFMPEG_FOUND)
         INCLUDE_DIRECTORIES(${FFMPEG_LIBSWSCALE_INCLUDE_DIRS})
         INCLUDE_DIRECTORIES(${FFMPEG_LIBAVFILTER_INCLUDE_DIRS})
     ELSE()
-        MESSAGE("WARNING: Movies disabled!")
+        MESSAGE(WARNING "Movies disabled!")
     ENDIF()
 ELSE()
-    MESSAGE("WARNING: FFMPEG not found!, movies unavailable!")
+    MESSAGE(WARNING "FFMPEG not found!, movies unavailable!")
 ENDIF()
 
 #Required for more compliant floating point math
@@ -301,22 +277,30 @@ IF(NOT MSVC_CL_BUILD)
     ENDIF()
     SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -g -Wall -Wextra")
     SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS}")
-    IF (OPTION_O0)
+    IF(OPTION_O0)
         SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
         SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O0")
     ELSE()
-        SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -ftree-vectorize")
-    ENDIF ()
+        IF(CMAKE_SYSTEM_PROCESSOR MATCHES "e2k" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+            # O3 on mcst-lcc approximately equal to O2 at gcc X86/ARM
+            SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+        ELSE()
+            SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -ftree-vectorize")
+        ENDIF()
+    ENDIF()
     IF(MACOS)
-        SET(CMAKE_BUILD_RPATH "./dxvk-native-prefix/src/dxvk-native-build/src/d3d9/")
+        SET(CMAKE_BUILD_RPATH "./Render/dxvk-prefix/src/dxvk-build/src/d3d9/;/usr/local/lib/")
     ELSE()
         SET(CMAKE_BUILD_RPATH "$ORIGIN") #let binary find libs on own dir
-        SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -no-pie -fno-pie")
     ENDIF()
 
-    IF (OPTION_ASAN)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
-        set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
+    IF (NOT OPTION_SANITIZE AND OPTION_ASAN)
+        set(OPTION_SANITIZE "address")
+    ENDIF()
+
+    IF (OPTION_SANITIZE)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=${OPTION_SANITIZE}")
+        set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=${OPTION_SANITIZE}")
     ENDIF()
 
     #Codebase assumes char is signed, some compilers set char as unsigned
@@ -328,38 +312,56 @@ IF(NOT MSVC_CL_BUILD)
     add_compile_options(-Wno-unused-parameter)
     add_compile_options(-Wno-unused-function)
     add_compile_options(-Wno-unused-variable)
+    add_compile_options(-Wno-unused-value)
     add_compile_options(-Wno-comment)
+    add_compile_options(-Wno-deprecated)
+    add_compile_options(-Wno-strict-aliasing)
     IF(CLANG)
         add_compile_options(-Wno-missing-braces)
         add_compile_options(-Wno-invalid-source-encoding)
     ELSE()
         add_compile_options(-Wno-unused-but-set-variable)
+        SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -no-pie -fno-pie")
     ENDIF()
-    add_compile_options(-Wno-unused-value)
-    add_compile_options(-Wno-deprecated)
     
     #TODO remove these once code is more reasonable
     add_compile_options(-Wno-sign-compare)
     add_compile_options(-Wno-narrowing)
-    add_compile_options(-Wno-write-strings)
-    add_compile_options(-Wno-return-type)
     IF(CLANG)
         add_compile_options(-Wno-reorder-ctor)
     ENDIF()
 
-    add_compile_options(-Wno-unknown-pragmas) #TODO we should remove these pragmas?
-    add_compile_options(-Werror=dangling-else)
-    add_compile_options(-Werror=return-type)
-    # add_compile_options(-Werror=switch) #TODO enable for strict check of switch block
-    # add_compile_options(-Werror=write-strings) #TODO enable this again
-
-    if (CLANG)
-        add_compile_options(-Werror=mismatched-new-delete )
-    endif()
+    add_compile_options(-Wno-pragmas)
+    add_compile_options(-Wno-unknown-pragmas)
     
     #These options may cause issues with external code compilation, so we apply only to our own targets
-    SET(PERIMETER_COMPILE_OPTIONS -Werror=shift-negative-value)
-    SET(PERIMETER_COMPILE_OPTIONS -Werror=parentheses)
+    SET(PERIMETER_COMPILE_OPTIONS
+            -Werror=implicit-fallthrough
+            -Werror=shift-negative-value
+            -Werror=parentheses
+            -Werror=dangling-else
+            -Werror=return-type
+            -Werror=switch
+            -Werror=write-strings
+            -Werror=overloaded-virtual
+            -Werror=sequence-point
+            -Werror=enum-compare
+            -Werror=format
+            #TODO remove these once code is more reasonable
+            -Wno-deprecated-copy
+    )
+    IF(CLANG)
+        set(PERIMETER_COMPILE_OPTIONS
+                ${PERIMETER_COMPILE_OPTIONS}
+                -Werror=inconsistent-missing-override
+        )
+    ELSE ()
+        set(PERIMETER_COMPILE_OPTIONS
+                ${PERIMETER_COMPILE_OPTIONS}
+                #TODO remove these once code is more reasonable
+                -Wno-class-memaccess
+        )
+    ENDIF()
 ENDIF()
 
 #Pass project version as a definition
@@ -368,6 +370,8 @@ ADD_DEFINITIONS(-DPERIMETER_VERSION=${PERIMETER_VERSION_STR})
 UNSET(PERIMETER_VERSION_STR)
 
 ADD_DEFINITIONS(-D_PERIMETER_)
+add_definitions(-D_TX3D_LIBRARY_)
+add_definitions(-DFLT_EVAL_METHOD=0)
 IF(OPTION_FINAL_VERSION)
     ADD_DEFINITIONS(-D_FINAL_VERSION_)
 ELSE()
@@ -383,14 +387,39 @@ IF(PERIMETER_DEBUG)
 ELSE()
     ADD_DEFINITIONS(-DNDEBUG)
 ENDIF()
-IF(OPTION_DISABLE_STACKTRACE)
-    ADD_DEFINITIONS(-DOPTION_DISABLE_STACKTRACE)
-ENDIF()
 IF(PERIMETER_EXODUS)
     ADD_DEFINITIONS(-DPERIMETER_EXODUS)
 ENDIF()
-IF(PERIMETER_EXODUS_SOUND)
-    ADD_DEFINITIONS(-DPERIMETER_EXODUS_SOUND)
+
+#simpleini
+FetchContent_Declare(simpleini
+        GIT_REPOSITORY    https://github.com/brofield/simpleini
+        GIT_TAG           "7350fcc9228f410309734c3fb6dae2bf513cdd98"
+        GIT_SHALLOW       OFF
+)
+FetchContent_MakeAvailable(simpleini)
+INCLUDE_DIRECTORIES(${simpleini_SOURCE_DIR})
+
+IF(NOT PERIMETER_WINDOWS)
+    #Non Windows target specifics
+
+    #pevents retrieval
+    FetchContent_Declare(pevents
+            GIT_REPOSITORY    https://github.com/neosmart/pevents
+            GIT_TAG           "d6afcbc629cf806f6465238849278e530e1d56fb"
+            GIT_SHALLOW       OFF
+    )
+    FetchContent_MakeAvailable(pevents)
+    ADD_DEFINITIONS(-DWFMO)
+
+    #Includes
+    INCLUDE_DIRECTORIES(
+            "${PROJECT_SOURCE_DIR}/Source/Exodus"
+            "${pevents_SOURCE_DIR}/src"
+    )
 ENDIF()
+
+#This is the only way I know to force download of external project from any targets
+ADD_CUSTOM_TARGET(dependencies ALL)
 
 ADD_SUBDIRECTORY("Source")

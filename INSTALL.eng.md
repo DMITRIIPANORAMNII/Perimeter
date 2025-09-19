@@ -15,22 +15,28 @@ Pass `-DCMAKE_BUILD_TYPE=Debug` to cmake command for debug builds with some stuf
 
 We have several CI in github which can serve as hint and examples.
 
-### Main dependencies
+### Required and optional dependencies to build
 
+Required:
 - C++17 compiler
 - CMake
 - SDL2
 - SDL2_image
 - SDL2_net
 - SDL2_mixer
+- zlib
+
+Optional:
 - FFmpeg (avcodec / avformat / avfilter / avutils / swscale)
-- Boost
-- ZLIB
+  - Adds movie playback support
+- Boost stacktrace
+  - Adds stacktrace support during crash reporting 
 
 ### Automatic dependencies
 
 These dependencies are downloaded and compiled automatically if needed by CMake and no intervention is need:
 - https://github.com/doitsujin/dxvk - Vulkan translation layer for D3D9 render code.
+- https://github.com/floooh/sokol - Sokol libraries for OpenGL, Metal, D3D and other APIs
 - https://github.com/neosmart/pevents - Provides Windows compatible events.
 - https://github.com/brofield/simpleini - Provides .ini file loading/writing.
 
@@ -48,8 +54,8 @@ Recommended method on Windows.
 ### Instructions
 
 - Run `msvc\generate_msvc.bat` script
-- Open generate solution file for project
-- Compile project
+- Run `cmake --build build --config Release -- /m` from project root to generate Release build
+- Binaries will be generated at `build\Source\Release`
 
 ### Launching the game
 Copy generated perimeter.exe executable and required libraries .dll's to the game directory.
@@ -69,14 +75,15 @@ Copy generated perimeter.exe executable and required libraries .dll's to the gam
   - lld
   - libbacktrace
 
-Packages: `gcc cmake make ninja SDL2 SDL2_image SDL2_net SDL2_mixer boost lld libbacktrace zlib`
+Packages: `gcc cmake make ninja boost lld libbacktrace zlib`
+
+Packages for SDL2: `SDL2 SDL2_image SDL2_net SDL2_mixer`
 
 ### Instructions
 
 - `mkdir build`
 - `cd build`
 - `cmake -G Ninja ..`
-- `ninja dependencies`
 - `ninja -j4` (replace 4 with number of logical cores in your computer)
 
 ### Launching the game
@@ -100,16 +107,16 @@ Experimental support, it uses dxvk for D3D9 API and some libraries to supply Win
   - vulkan headers (for DXVK)
   - glsllang-tools (for DXVK which needs glslangValidator program) 
 
-Packages in Debian/Ubuntu: `build-essential ninja-build cmake meson libvulkan-dev glslang-tools lld cmake meson zlib1g-dev
-libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-mixer-dev libboost-dev
-libavcodec-dev libavformat-dev libavfilter-dev libswscale-dev`
+Packages in Debian/Ubuntu: `build-essential ninja-build cmake meson libvulkan-dev glslang-tools lld cmake meson zlib1g-dev 
+libboost-dev libavcodec-dev libavformat-dev libavfilter-dev libswscale-dev`
+
+Packages for SDL2: `libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-mixer-dev`
 
 ### Instructions
 
 - `mkdir build`
 - `cd build`
 - `cmake -G Ninja ..`
-- `ninja dependencies`
 - `ninja -j$(nproc --all)` or `ninja -j4` (replace 4 with number of logical cores in your computer)
 
 ### Launching the game
@@ -131,14 +138,15 @@ Experimental support, it uses dxvk for D3D9 API and some libraries to supply Win
   - libbacktrace
   - Vulkan SDK or MoltenVK (for DXVK)
 
-Packages in MacPorts: `ninja cmake meson ffmpeg boost libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-mixer-dev zlib`
+Packages in MacPorts: `ninja cmake meson ffmpeg boost zlib`
+
+Packages for SDL2: `libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-mixer-dev`
 
 ### Instructions
 
 - `mkdir build`
 - `cd build`
 - `cmake -G Ninja ..`
-- `ninja dependencies`
 - `ninja -j$(nproc --all)` or `ninja -j4` (replace 4 with number of logical cores in your computer)
 
 ### Launching the game

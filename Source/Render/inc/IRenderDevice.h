@@ -102,7 +102,7 @@ class cObjMesh;
 
 unsigned int ColorByNormal(Vect3f n);
 Vect3f NormalByColor(uint32_t d);
-void BuildMipMap(int x,int y,int bpp,int bplSrc,void *pSrc,int bplDst,void *pDst,
+void BuildMipMap(int x,int y,int bpp,int bplSrc,const void *pSrc,int bplDst,void *pDst,
                  int rc,int gc,int bc,int ac,int rs,int gs,int bs,int as,int Blur=0);
 
 struct sPolygon {
@@ -122,15 +122,15 @@ struct sDataRenderMaterial
     sColor4f	Diffuse;
     sColor4f	Specular;
     sColor4f	Emissive;
-    float		Power;
+    float		Power = 0.0f;
 
-    float       Phase;
-    uint32_t    mat;//eMaterialMode
-    cTexture	*Tex[2];
+    float       Phase = 0.0f;
+    uint32_t    mat = 0;
+    cTexture*   Tex[2] = {};
     MatXf		TexMatrix;
-    float		MaterialAnimPhase;
+    float		MaterialAnimPhase = 0.0f;
 
-    sDataRenderMaterial()			{ Phase=0; MaterialAnimPhase=0; }
+    sDataRenderMaterial() = default;
 };
 
 using ColorConversionFunc = uint32_t (*)(const sColor4c&);
@@ -148,16 +148,35 @@ protected:
     uint32_t ScreenHZ = 0;
     uint32_t RenderMode = 0;
     class DrawBuffer* activeDrawBuffer = nullptr;
-    std::vector<class DrawBuffer*> drawBuffers;
+    std::unordered_map<uint64_t, class DrawBuffer*> drawBuffers;
     Mat4f orthoVP;
     eCullMode CameraCullMode = CULL_NONE;
-    bool WireframeMode = false;
+    bool debugUIEnabled = false;
 
-    virtual void Draw(class FieldDispatcher *ffd, uint8_t transparent);
+    virtual void DrawFieldDispatcher(class FieldDispatcher* ffd, uint8_t transparent);
 
 public:
     cInterfaceRenderDevice();
     ~cInterfaceRenderDevice() override;
+    
+    // Runtime set methods 
+    
+    ColorConversionFunc ConvertColor = nullptr;
+    
+    // Helper methods
+    
+    inline cCamera* GetDrawNode() { return DrawNode; }
+
+    inline cTexLibrary* GetTexLibrary() { return TexLibrary; }
+
+    inline eModeRenderDevice GetRenderMode() { return static_cast<eModeRenderDevice>(RenderMode); }
+
+    cTexture* GetTexture(int n);
+    
+    void DrawFieldDispatcher(class FieldDispatcher *ffd);
+
+    void DrawSprite3(int x, int y, int dx, int dy, float u, float v, float du, float dv,
+                     cTexture *Tex1, cTexture *Tex2, const sColor4c& ColorMul=sColor4c(255,255,255,255), float phase=0);
     
     // Common methods
 
@@ -166,11 +185,6 @@ public:
     virtual int Done();
     virtual int BeginScene();
     virtual int EndScene();
-
-    cTexLibrary* GetTexLibrary() { return TexLibrary; }
-    cTexture* GetTexture(int n);
-
-    eModeRenderDevice GetRenderMode() { return static_cast<eModeRenderDevice>(RenderMode); }
 
     virtual bool IsFullScreen() { return (RenderMode&RENDERDEVICE_MODE_WINDOW) == 0; }
     
@@ -181,7 +195,6 @@ public:
 
     virtual void SetTexture(uint32_t slot, class cTexture* texture, float Phase);
 
-    inline cCamera* GetDrawNode() { return DrawNode; }
     virtual void SetDrawNode(cCamera* node) { DrawNode = node; };
     virtual void SetWorldMatXf(const MatXf& matrix);
 
@@ -210,7 +223,7 @@ public:
     virtual indices_t* LockIndexBufferRange(class IndexBuffer &ib, uint32_t Start, uint32_t Amount);
     virtual void UnlockIndexBuffer(class IndexBuffer &ib);
 
-    virtual class DrawBuffer* GetDrawBuffer(vertex_fmt_t fmt, ePrimitiveType primitive);
+    virtual class DrawBuffer* GetDrawBuffer(vertex_fmt_t fmt, ePrimitiveType primitive, size_t vertices = 0);
     virtual void SetActiveDrawBuffer(class DrawBuffer*);
 
     /*Внутренний мтод. Использовать с крайней осторожностью.
@@ -236,17 +249,15 @@ public:
     virtual int CreateTilemap(class cTileMap *TileMap);
     virtual int DeleteTilemap(class cTileMap *TileMap);
 
-    virtual void Draw(class ElasticSphere *es);
-    virtual void Draw(class cScene *Scene);
-    virtual void DrawBound(const MatXf &Matrix, const Vect3f &min, const Vect3f &max, bool wireframe=0, const sColor4c& Color=sColor4c(255,255,255,255));
-    virtual void Draw(class FieldDispatcher *ffd);
-
+    virtual void DrawElasticSphere(class ElasticSphere *es);
+    virtual void DrawScene(class cScene *Scene);
+    virtual void DrawBound(const Vect3f &min, const Vect3f &max, const sColor4c& diffuse=sColor4c(255,255,255,255));
+    virtual void DrawBound(const MatXf &Matrix, const Vect3f &min, const Vect3f &max, bool wireframe=false, const sColor4c& diffuse=sColor4c(255,255,255,255));
+    
     virtual void DrawSprite(int x,int y,int dx,int dy,float u,float v,float du,float dv,
                             cTexture *Texture,const sColor4c& ColorMul=sColor4c(255,255,255,255),float phase=0,eBlendMode mode=ALPHA_NONE);
-    virtual void DrawSprite2(int x,int y,int dx,int dy,float u,float v,float du,float dv,
-                             cTexture *Tex1,cTexture *Tex2,const sColor4c& ColorMul=sColor4c(255,255,255,255),float phase=0);
-    virtual void DrawSprite2(int x,int y,int dx,int dy,float u,float v,float du,float dv,float u1,float v1,float du1,float dv1,
-                             cTexture *Tex1,cTexture *Tex2,const sColor4c& ColorMul=sColor4c(255,255,255,255),float phase=0,eColorMode mode=COLOR_MOD,eBlendMode blend_mode=ALPHA_NONE);
+    virtual void DrawSprite3(int x1, int y1, int dx, int dy, float u0, float v0, float du0, float dv0, float u1, float v1, float du1, float dv1,
+                             cTexture *Tex1, cTexture *Tex2, const sColor4c& ColorMul=sColor4c(255,255,255,255), float phase=0, eColorMode mode=COLOR_MOD, eBlendMode blend_mode=ALPHA_NONE);
     virtual void DrawSprite2(int x,int y,int dx,int dy,float u,float v,float du,float dv,float u1,float v1,float du1,float dv1,
                              cTexture *Tex1,cTexture *Tex2,float lerp_factor,float alpha=1,float phase=0,eColorMode mode=COLOR_MOD,eBlendMode blend_mode=ALPHA_NONE);
     
@@ -259,9 +270,17 @@ public:
     virtual void DrawPoint(const Vect3f &v1, const sColor4c& color);
     virtual void FlushPrimitive3D();
 
-    // Decl only methods
+    virtual void DebugUISetEnable(bool enabled);
+    virtual bool DebugUIIsEnabled();
+    virtual bool DebugUIMouseMove(const Vect2f& pos);
+    virtual bool DebugUIMousePress(const Vect2f& pos, uint8_t button, bool pressed);
+    virtual bool DebugUIKeyPress(struct sKey* key, bool pressed);
 
-    ColorConversionFunc ConvertColor = nullptr;
+#ifdef PERIMETER_DEBUG
+    virtual void StartCaptureFrame();
+#endif
+
+    // Decl only methods
 
     virtual eRenderDeviceSelection GetRenderSelection() const = 0;
 
@@ -287,6 +306,7 @@ public:
     virtual void* LockTextureRect(class cTexture* Texture, int& Pitch, Vect2i pos, Vect2i size) = 0;
     virtual void UnlockTexture(class cTexture *Texture) = 0;
     virtual void SetTextureImage(uint32_t slot, struct TextureImage* texture_image) = 0;
+    virtual void SetTextureTransform(uint32_t slot, const Mat4f& transform) = 0;
     virtual uint32_t GetMaxTextureSlots() = 0;
     
     virtual void SetGlobalFog(const sColor4f &color,const Vect2f &v) = 0;
@@ -310,19 +330,22 @@ public:
     virtual void EndDrawShadow() = 0;
     virtual void SetSimplyMaterialShadow(cObjMesh* mesh, cTexture* texture) = 0;
     virtual void DrawNoMaterialShadow(cObjMesh* mesh) = 0;
+    virtual union SurfaceImage GetShadowZBuffer() = 0;
+
+    virtual void SetRenderTarget(cTexture* target, union SurfaceImage zbuffer) = 0;
+    virtual void RestoreRenderTarget() = 0;
 
     virtual void SetMaterialTilemap(cTileMap *TileMap) = 0;
     virtual void SetMaterialTilemapShadow() = 0;
     virtual void SetTileColor(sColor4f color) = 0;
 
-    /*
-    virtual bool CreateShadowTexture(int xysize);
-    virtual void DeleteShadowTexture();
+    virtual bool CreateShadowTexture(int xysize) = 0;
+    virtual void DeleteShadowTexture() = 0;
 
-    virtual cTexture* GetShadowMap();
-    virtual ???* GetZBuffer();
-    virtual cTexture* GetLightMap();
-    */
+    virtual cTexture* GetShadowMap() = 0;
+    virtual cTexture* GetLightMap() = 0;
+
+    // Decl only methods end
 };
 
 cInterfaceRenderDevice* CreateIRenderDevice(eRenderDeviceSelection selection);
@@ -339,7 +362,7 @@ enum eSurfaceFormat
     SURFMT_BUMP,
     SURFMT_COLOR32,
     SURFMT_COLORALPHA32,
-    SURFMT_RENDERMAP_FLOAT,
+    SURFMT_RENDERMAP_DEPTH,
     SURFMT_GRAYALPHA,//A8L8 - в лудшем случае
     SURFMT_UV,
     SURFMT_U16V16,

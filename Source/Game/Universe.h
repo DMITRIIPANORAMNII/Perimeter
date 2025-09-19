@@ -1,6 +1,8 @@
 #ifndef __UNIVERSE_H__
 #define __UNIVERSE_H__
 
+#include "NetConnection.h"
+#include "NetComEventBuffer.h"
 #include "GenericControls.h"
 #include "SafeMath.h"
 #include "HyperSpace.h"
@@ -28,7 +30,7 @@ public:
 	~terUniverse();
 
     void clear();
-	void Quant();
+	void Quant() override;
 	void AvatarQuant();
 	void PrepareQuant();
 	void triggerQuant();
@@ -63,7 +65,7 @@ public:
 	void makeCommandSubtle(CommandID command_id, const Vect3f& position, CommandSelectionMode mode);
 	void makeCommand(CommandID command_id, const Vect3f& position, CommandSelectionMode mode);
 	void makeCommand(CommandID command_id, terUnitBase* actionObject, CommandSelectionMode mode);
-	void toggleHold();
+	void toggleHold(bool pause);
 
 	void setShouldIgnoreIntfCommands(bool shouldIgnoreIntfCommands) {
 		PlayerVect::iterator pi;
@@ -72,9 +74,9 @@ public:
 		}
 	}
 
-	void receiveCommand(const netCommand4G_UnitCommand& command);
-	void receiveCommand(const netCommand4G_Region& reg);
-	bool forcedDefeat(int playerID);
+	void receiveCommand(const netCommand4G_UnitCommand& command) override;
+	void receiveCommand(const netCommand4G_Region& reg) override;
+	bool forcedDefeat(int playerID) override;
 
     terUnitBase* TraceUnit(const Vect2f& pos, terUnitID* unit_filter = nullptr);
 	int SelectUnit(terUnitBase* p);
@@ -135,7 +137,6 @@ private:
 	bool enableEventChecking_;
 
 	int quant_counter_;
-	float interpolation_factor_;
 
 	bool fieldTransparent_;
 

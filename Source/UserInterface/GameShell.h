@@ -9,19 +9,22 @@
 #include "../Network/P2P_interface.h"
 #include "LogicUpdater.h"
 #include "ReelManager.h"
+#include "CameraManager.h"
 #include <SDL_events.h>
 
 struct LocalizedText;
 class MissionEditor;
 
 struct CommandLineData {
-    bool server;
-    std::string save;
-    std::string address;
-    std::string playerName;
-    std::string roomName;
-    std::string password;
-    bool publicHost;
+    bool server = false;
+    std::string save {};
+    std::string address {};
+    std::string playerName {};
+    std::string roomName {};
+    std::string password {};
+    NetRoomID roomID = 0;
+    uint16_t addressDefaultPort = 0;
+    bool publicHost = true;
 };
 
 //------------------------------------------
@@ -41,16 +44,13 @@ public:
 	void startCmdline(const CommandLineData& data);
 	void switchToInitialMenu();
 
-    void MultiplayerGameStarting();
-	void MultiplayerGameStart(const MissionDescription& mission);
-    void MultiplayerGameRestore(const MissionDescription& mission);
-
 	bool universalSave(const char* name, bool userSave, MissionDescription* missionOutput = nullptr);
 	SavePrm& savePrm() { return savePrm_; }
 	const SaveManualData& manualData() { return savePrm_.manualData; }
 	
 	void GraphQuant();
 	void Show();
+    void renderEndScene();
 
 	void showWays();
 
@@ -70,15 +70,14 @@ public:
 	void KeyUnpressed(sKey &key);
 	bool DebugKeyPressed(sKey& Key);
 	void editParameters();
-	void ControlPressed(int key);
-	void ControlUnpressed(int key);
+	void ControlPressed(uint32_t key);
+	void ControlUnpressed(uint32_t key);
 	void MouseLeftPressed(const Vect2f& pos);
 	void MouseRightPressed(const Vect2f& pos);
 	void MouseRightUnpressed(const Vect2f& pos);
 	void MouseLeftUnpressed(const Vect2f& pos);
 
-	void MouseMidPressed(const Vect2f& pos);
-	void MouseMidUnpressed(const Vect2f& pos);
+	void MouseButton(const Vect2f& pos, uint32_t key, bool pressed);
 
 	void MouseMove(const Vect2f& pos, const Vect2f& rel);
 	void MouseLeftDoubleClick(const Vect2f& pos);
@@ -149,11 +148,8 @@ public:
 	const Vect2f& mousePosition() const { return mousePosition_; }
     const Vect2f& mousePositionDelta() const { return mousePositionDelta_; }
     const Vect2f& mousePositionRelative() const { return mousePositionRelative_; }
-	
-	const Vect2f mousePressControl() const { return mousePressControl_; }
+    const Vect2f& mousePressControl() const { return mousePressControl_; }
 	void setMousePressControl(const Vect2f& pos) { mousePressControl_ = pos; }
-
-	const Vect3f& mapMoveStartPoint() const { return mapMoveStartPoint_; }
 
 	void setWindowClientSize(const Vect2i& size);
 	const Vect2i& windowClientSize() const { return windowClientSize_; }
@@ -163,13 +159,12 @@ public:
 
 	void rememberPlayerCamera(terPlayer* player, const char* triggerName);
 
-	bool interfaceShowFlag() const { return interfaceShowFlag_; }
 	bool showKeysHelp() const { return showKeysHelp_; }
 
 	cFont* debugFont() const { return debugFont_; }
 	void setSideArrowsVisible(bool visible);
 
-	void createNetClient();
+	void prepareNetClient();
 	PNetCenter* getNetClient();
 	void destroyNetClient();
 
@@ -229,8 +224,14 @@ public:
 	void toggleScriptReelEnabled() {
 		setScriptReelEnabled(!scriptReelEnabled);
 	}
+    
+    bool isDebugKeyHandlerEnabled() { return EnableDebugKeyHandlers; }
 
 	//-----Network function-----
+    
+    ///Mutex to ensure data that will be sent between threads isnt modified at same time
+    MTSection netDataLock;
+    
 	void NetQuant();
 	enum e_CreateGameReturnCode {
 		CG_RC_OK,
@@ -239,6 +240,7 @@ public:
 	void callBack_CreateGameReturnCode(e_CreateGameReturnCode retCode);
 	enum e_JoinGameReturnCode {
 		JG_RC_OK,
+        JG_RC_UNKNOWN_ERR,
         JG_RC_SIGNATURE_ERR,
 		JG_RC_PASSWORD_ERR,
 		JG_RC_CONNECTION_ERR,
@@ -253,11 +255,11 @@ public:
 	void showConnectFailedInGame(const std::string& playerList);
 	void hideConnectFailedInGame(bool connectionRestored = true);
 
-    void serverMessage(LocalizedText* message);
+    void serverMessage(const LocalizedText* message);
 
 	enum GeneralErrorType {
 		GENERAL_CONNECTION_FAILED,
-        CLIENT_DROPPED,
+        KICKED,
 		HOST_TERMINATED,
         DESYNC
 	};
@@ -265,9 +267,14 @@ public:
 
 	void abnormalNetCenterTermination();
     
-    void updateLatencyInfo(const NetLatencyInfo& info);
+    void updateLatencyInfo(const NetLatencyInfo& info, const MissionDescription* md);
 
 	void addStringToChatWindow(bool clanOnly, const std::string& newString, const std::string& locale);
+    
+    void MultiplayerGameStarting();
+    void MultiplayerGameStart(const MissionDescription& mission);
+    void MultiplayerGameRestore(const MissionDescription& mission);
+    void MultiplayerGameDesyncNotify(DesyncNotify& nc);
 
 	//-----end of network function----
 
@@ -285,6 +292,11 @@ public:
 	bool isStartedWithMainmenu() const {
 		return startedWithMainmenu;
 	}
+
+    void setCameraMouseShift(bool cameraMouseShift);
+    
+    void setCaptureInputCallback(bool (*input_callback)(uint32_t key, bool press));
+    bool hasCaptureInputCallback();
 
 private:
 	class CChaos* chaos;
@@ -307,14 +319,15 @@ private:
     Vect2f mousePressControl_;
 
 	bool alwaysRun_;
-	bool interfaceShowFlag_;
 	bool showKeysHelp_;
 	bool showWireFrame_;
 	int activePlayerID_;
 
-	Vect3f mapMoveStartPoint_;
-		
-	float game_speed;
+    Vect3f mapMoveStartWorldPos_ = Vect3f::ZERO;
+    Vect3f mapMoveStartCameraPos_ = Vect3f::ZERO;
+    cCamera* mapMoveStartCamera_ = nullptr;
+
+    float game_speed;
 	float game_speed_to_resume;
 	//MeasurementTimer gameTimer_;
 
@@ -381,6 +394,10 @@ private:
 	int soundPushedPushLevel;
 
 	DebugPrm debugPrm_;
+
+    bool (*CaptureControlInput)(uint32_t key, bool press) = nullptr;
+
+    uint32_t lastActivatedControlKey = 0;
 };
 
 extern GameShell* gameShell;

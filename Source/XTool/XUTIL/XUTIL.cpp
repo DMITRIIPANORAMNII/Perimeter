@@ -8,10 +8,6 @@
 #include <cwchar>
 #include <cwctype>
 #include "tweaks.h"
-#ifdef _WIN32 
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-#include <windows.h>
-#endif
 #include "xutil.h"
 #include "xmath.h"
 
@@ -20,26 +16,6 @@ std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> utf8cvt;
 bool argcv_setup_done = false;
 int app_argc = 0;
 std::vector<std::string> app_argv;
-
-static unsigned int XRndValue = 83838383;
-
-unsigned int XRnd(unsigned int m)
-{ 
-	XRndValue = XRndValue*214013L + 2531011L;
-	if(!m)
-		return 0;
-	return ((XRndValue>> 16) & 0x7fff) % m; 
-}
-
-void XRndSet(unsigned int m)
-{
-	XRndValue = m;
-}
-
-unsigned int XRndGet()
-{
-	return XRndValue;
-}
 
 void setup_argcv(int argc, char *argv[]) {
     //Pick the args
@@ -477,4 +453,59 @@ std::string BreakLongLines(const char* ptext, size_t max_width, char endline) {
         }
     }
     return text;
+}
+
+arch_flags computeArchFlags() {
+    arch_flags val = 0;
+
+    //Release build - 0 (1) bit
+#if defined(_FINAL_VERSION_) && !defined(PERIMETER_DEBUG)
+    //Don't set if debug_key_handler is active in Release
+        if (!check_command_line("debug_key_handler")) {
+            val |= 1;
+        }
+#endif
+
+    //Compiler type - 1-7 (7) bits
+    arch_flags compiler;
+#if defined(_MSC_VER)
+    compiler = 1;
+#elif defined(__clang__)
+    compiler = 2;
+#elif defined(__GNUC__)
+    compiler = 3; //Must be checked after clang as it also defines __GNUC__
+#else
+    compiler = 0;
+#endif
+    xassert(compiler <= 0x7F);
+    val |= compiler<<1;
+
+    //OS type - 8-15 (8) bits
+    arch_flags os;
+#if defined(__linux__)
+    os = 1;
+#elif defined(__APPLE__)
+    os = 2;
+#elif defined(_WIN32)
+        os = 3;
+#elif defined(EMSCRIPTEN)
+        os = 4;
+#else
+        os = 0;
+#endif
+    xassert(os <= 0xFF);
+    val |= os<<8;
+
+    //CPU type - 16-23 (4) bits
+    arch_flags cpu = 0;
+    //Arch - 16-17 bits (0 = under 32, 1 = 32, 2 = 64, 3 = above 64)
+    cpu |= (sizeof(void*) / 4) & 3;
+    //CPU endianness - 23 bit
+#if SDL_BYTEORDER == SDL_LIL_ENDIAN
+    cpu |= 1<<3;
+#endif
+    xassert(cpu <= 0xF);
+    val |= cpu<<16;
+
+    return val;
 }

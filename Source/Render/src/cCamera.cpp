@@ -67,10 +67,10 @@ cCamera::cCamera(cScene *UClass) : cUnknownClass(KIND_DRAWNODE)
 
 	Clip.set(0.01f,0.01f,0.99f,0.99f);
 
-	RenderTarget=0;
-	pZBuffer=NULL;
+	RenderTarget = nullptr;
+	pZBuffer = SurfaceImage::NONE;
 
-	RenderDevice=0;
+	RenderDevice = nullptr;
 
 	Focus.set(1,1);
 	FocusViewPort.set(0,0);
@@ -106,7 +106,8 @@ void cCamera::DrawScene()
 	{
 		RenderDevice->FlushPrimitive3D();
 		RenderDevice->SetRenderState(RS_ZFUNC,CMP_LESSEQUAL);
-  		RenderDevice->SetRenderState(RS_BILINEAR,TRUE);
+  		RenderDevice->SetRenderState(RS_BILINEAR,true);
+        RenderDevice->SetRenderState(RS_ALPHA_TEST_MODE, ALPHATEST_GT_0);
 	}
 
 	std::vector<cCamera*>::iterator it_c;
@@ -147,11 +148,12 @@ void cCamera::DrawScene()
 	}else // объекты не освещаются
 		RenderDevice->SetGlobalLight(NULL);
 
-	RenderDevice->SetRenderState( RS_ZWRITEENABLE, TRUE );
+	RenderDevice->SetRenderState(RS_ZWRITEENABLE, true);
 
     uint32_t fogenable = RenderDevice->GetRenderState(RS_FOGENABLE);
-	if(GetAttribute(ATTRCAMERA_SHADOW|ATTRCAMERA_SHADOWMAP|ATTRCAMERA_SHADOW_STRENCIL))
-		RenderDevice->SetRenderState(RS_FOGENABLE,false);
+	if(GetAttribute(ATTRCAMERA_SHADOW|ATTRCAMERA_SHADOWMAP|ATTRCAMERA_SHADOW_STRENCIL)) {
+        RenderDevice->SetRenderState(RS_FOGENABLE, false);
+    }
 	
 //	if(GetAttribute(ATTRCAMERA_ZMINMAX))
 //	{
@@ -575,14 +577,14 @@ void cCamera::UpdateVieport()
 	ScaleViewPort.set(1,RenderSize.x/RenderSize.y);
 }
 
-void cCamera::SetRenderTarget(cTexture *pTexture, IDirect3DSurface9* pZBuf)
+void cCamera::SetRenderTarget(cTexture* texture, SurfaceImage zbuffer)
 {
-	RenderTarget=pTexture;
-	pZBuffer=pZBuf;
+	RenderTarget = texture;
+	pZBuffer = zbuffer;
 	UpdateVieport();
 }
 
-void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,Vect3f *pv,Vect3f *pe)
+void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,Vect3f *pv,Vect3f *pe) const
 {
 	Vect3f pv0,pe0;
 	if(pw==0) return;
@@ -591,7 +593,7 @@ void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,Vect3f *pv,Vect3f *pe)
     Mat4fConvert(matViewProjScr, *pw, *pv, *pe);
 }
 
-void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,float WorldRadius,Vect3f *pe,int *ScreenRadius)
+void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,float WorldRadius,Vect3f *pe,int *ScreenRadius) const
 {
 	Vect3f pv,pe0;
 	if(pw==0) return;
@@ -600,7 +602,7 @@ void cCamera::ConvertorWorldToViewPort(const Vect3f *pw,float WorldRadius,Vect3f
 	if(ScreenRadius) *ScreenRadius= xm::round(WorldRadius * GetFocusViewPort().x / pv.z);
 }
 
-void cCamera::ConvertorWorldToCamera(const Vect3f *pw,Vect3f *pe)
+void cCamera::ConvertorWorldToCamera(const Vect3f *pw,Vect3f *pe) const
 {
 	if(pw==0||pe==0) return;
 	float d;
@@ -610,7 +612,7 @@ void cCamera::ConvertorWorldToCamera(const Vect3f *pw,Vect3f *pe)
 	pe->y=GetScaleViewPort().y*pe->y*d;
 }
 
-void cCamera::ConvertorCameraToWorld(Vect3f *pw,const Vect2f *pe)
+void cCamera::ConvertorCameraToWorld(Vect3f *pw,const Vect2f *pe) const
 {
 	float x,y;
 	float cx=(Clip.xmin()+Clip.xmax())*0.5f,
@@ -628,8 +630,7 @@ void cCamera::ConvertorCameraToWorld(Vect3f *pw,const Vect2f *pe)
 	GetMatrix().invXformPoint(Vect3f(x*focus.x,-y*focus.y,zPlane.x),*pw);
 }
 
-void cCamera::GetWorldRay(const Vect2f& pos_in,Vect3f& pos,Vect3f& dir)
-{
+void cCamera::GetWorldRay(const Vect2f& pos_in,Vect3f& pos,Vect3f& dir) const {
 	if(GetAttribute(ATTRCAMERA_PERSPECTIVE))
 	{
 		ConvertorCameraToWorld(&pos,&pos_in);
@@ -768,9 +769,9 @@ struct SortMaterialByNodeBank
 						return true;
 					if(s1->ambient==s2->ambient)
 					{
-						if(s1->attribute<s1->attribute)
+						if(s1->attribute<s2->attribute)
 							return true;
-						if(s1->attribute==s1->attribute)
+						if(s1->attribute==s2->attribute)
 							if(s1->phase<s2->phase)
 								return true;
 					}
@@ -790,7 +791,7 @@ void cCamera::DrawSortMaterial()
 	std::sort(ar.begin(),ar.end(),SortMaterialByNodeBank());
 
 	sDataRenderMaterial Data;
-	int change_mat=1,draw_object=0;
+	//int change_mat=1,draw_object=0;
 
 	cMeshSortingPhase* cur_mat=ar.front();
 
@@ -802,47 +803,29 @@ void cCamera::DrawSortMaterial()
 
     gb_RenderDevice->BeginDrawMesh(false, use_shadow);
     gb_RenderDevice->SetSimplyMaterialMesh(cur_mat->GetFront(), &Data);
+    bool reflection = GetAttribute(ATTRCAMERA_REFLECTION);
 
-	if (GetAttribute(ATTRCAMERA_REFLECTION)) {
-        for (cMeshSortingPhase* s : ar) {
-			if(cur_mat->pBank!=s->pBank || cur_mat->channel!=s->channel ||
-				cur_mat->phase!=s->phase || cur_mat->diffuse!=s->diffuse ||
-				cur_mat->ambient!=s->ambient ||
-				cur_mat->attribute!=s->attribute) {
-				cur_mat=s;
-				cur_mat->GetMaterial(&Data);
+    for (cMeshSortingPhase* s : ar) {
+        if(cur_mat->pBank!=s->pBank || cur_mat->channel!=s->channel ||
+           cur_mat->phase!=s->phase || cur_mat->diffuse!=s->diffuse ||
+           cur_mat->ambient!=s->ambient ||
+           cur_mat->attribute!=s->attribute) {
+            cur_mat=s;
+            cur_mat->GetMaterial(&Data);
 
-                gb_RenderDevice->SetSimplyMaterialMesh(cur_mat->GetFront(), &Data);
-				change_mat++;
-			}
+            gb_RenderDevice->SetSimplyMaterialMesh(cur_mat->GetFront(), &Data);
+            //change_mat++;
+        }
 
-			for(cObjMesh* pMesh=s->GetFront();pMesh;pMesh=pMesh->GetNextSorting()) {
-				if(pMesh->GetGlobalMatrix().trans().z<GetHReflection()) {
-                    continue;
-                }
+        for(cObjMesh* pMesh=s->GetFront();pMesh;pMesh=pMesh->GetNextSorting()) {
+            if (reflection && pMesh->GetGlobalMatrix().trans().z<GetHReflection()) {
+                continue;
+            }
 
-                gb_RenderDevice->DrawNoMaterialMesh(pMesh, &Data);
-				draw_object++;
-			}
-		}
-	} else {
-		for (cMeshSortingPhase* s : ar) {
-			if(cur_mat->pBank!=s->pBank || cur_mat->channel!=s->channel ||
-			   cur_mat->phase!=s->phase || cur_mat->diffuse!=s->diffuse ||
-			   cur_mat->attribute!=s->attribute) {
-				cur_mat=s;
-				cur_mat->GetMaterial(&Data);
-
-                gb_RenderDevice->SetSimplyMaterialMesh(cur_mat->GetFront(), &Data);
-				change_mat++;
-			}
-
-			for(cObjMesh* pMesh=s->GetFront();pMesh;pMesh=pMesh->GetNextSorting()) {
-                gb_RenderDevice->DrawNoMaterialMesh(pMesh, &Data);
-				draw_object++;
-			}
-		}
-	}
+            gb_RenderDevice->DrawNoMaterialMesh(pMesh, &Data);
+            //draw_object++;
+        }
+    }
 
     gb_RenderDevice->EndDrawMesh();
 }
@@ -867,7 +850,7 @@ void cCamera::DrawSortMaterialShadow()
 	cMeshBank *CurBank=NULL;
 
     gb_RenderDevice->BeginDrawShadow(GetAttribute(ATTRCAMERA_SHADOWMAP));
-    int change_mat=0,draw_object=0;
+    //int change_mat=0,draw_object=0;
 
 	std::vector<cMeshSortingPhase*>::iterator it;
 	FOR_EACH(ar,it)
@@ -880,7 +863,7 @@ void cCamera::DrawSortMaterialShadow()
 
 			cTexture* Texture=CurBank->GetMaterial()->GetAttribute(MAT_ALPHA_TEST)?CurBank->GetTexture(0):0;
             gb_RenderDevice->SetSimplyMaterialShadow(s.GetFront(),Texture);
-			change_mat++;
+			//change_mat++;
 		}
 
 		for(cObjMesh* pMesh=s.GetFront();pMesh;pMesh=pMesh->GetNextSorting())
@@ -889,7 +872,7 @@ void cCamera::DrawSortMaterialShadow()
 				continue;
 			if(pMesh->GetAttr(ATTRCAMERA_SHADOW))
                 gb_RenderDevice->DrawNoMaterialShadow(pMesh);
-			draw_object++;
+			//draw_object++;
 		}
 	}
 
@@ -913,32 +896,36 @@ void cCamera::DrawSortMaterialShadowStrencil()
     RenderDevice->SetRenderState( RS_STENCILENABLE, true );
 
 #ifdef PERIMETER_D3D9
-    // Dont bother with interpolating color
-    rd->SetRenderState( D3DRS_SHADEMODE,     D3DSHADE_FLAT );
+	if (rd) {
+		// Dont bother with interpolating color
+		rd->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_FLAT);
 
-    // Set up stencil compare fuction, reference value, and masks.
-    // Stencil test passes if ((ref & mask) cmpfn (stencil & mask)) is true.
-    // Note: since we set up the stencil-test to always pass, the STENCILFAIL
-    // renderstate is really not needed.
-    rd->SetRenderState( D3DRS_STENCILFUNC,  D3DCMP_ALWAYS );
-    rd->SetRenderState( D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP );
-    rd->SetRenderState( D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
+		// Set up stencil compare fuction, reference value, and masks.
+		// Stencil test passes if ((ref & mask) cmpfn (stencil & mask)) is true.
+		// Note: since we set up the stencil-test to always pass, the STENCILFAIL
+		// renderstate is really not needed.
+		rd->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_ALWAYS);
+		rd->SetRenderState(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP);
+		rd->SetRenderState(D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
 
-    // If ztest passes, inc/decrement stencil buffer value
-    rd->SetRenderState( D3DRS_STENCILREF,       0x1 );
-    rd->SetRenderState( D3DRS_STENCILMASK,      0xffffffff );
-    rd->SetRenderState( D3DRS_STENCILWRITEMASK, 0xffffffff );
+		// If ztest passes, inc/decrement stencil buffer value
+		rd->SetRenderState(D3DRS_STENCILREF, 0x1);
+		rd->SetRenderState(D3DRS_STENCILMASK, 0xffffffff);
+		rd->SetRenderState(D3DRS_STENCILWRITEMASK, 0xffffffff);
 
-    // Make sure that no pixels get drawn to the frame buffer
-    rd->SetRenderState( D3DRS_ALPHABLENDENABLE, true );
-    rd->SetRenderState( D3DRS_SRCBLEND,  D3DBLEND_ZERO );
-    rd->SetRenderState( D3DRS_DESTBLEND, D3DBLEND_ONE );
+		// Make sure that no pixels get drawn to the frame buffer
+		rd->SetRenderState(D3DRS_ALPHABLENDENABLE, true);
+		rd->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
+		rd->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+	}
 #endif
 
     // Draw front-side of shadow volume in stencil/z only
     RenderDevice->SetRenderState( RS_CULLMODE, CULL_CW );
 #ifdef PERIMETER_D3D9
-    rd->SetRenderState( D3DRS_STENCILPASS, D3DSTENCILOP_INCR );
+	if (rd) {
+		rd->SetRenderState(D3DRS_STENCILPASS, D3DSTENCILOP_INCR);
+	}
 #endif
 	DrawSortMaterialShadowStrencilOneSide();
     // Now reverse cull order so back sides of shadow volume are written.
@@ -946,13 +933,17 @@ void cCamera::DrawSortMaterialShadowStrencil()
     // Decrement stencil buffer value
 	RenderDevice->SetRenderState( RS_CULLMODE, CULL_CCW );
 #ifdef PERIMETER_D3D9
-    rd->SetRenderState( D3DRS_STENCILPASS, D3DSTENCILOP_DECR );
+	if (rd) {
+		rd->SetRenderState(D3DRS_STENCILPASS, D3DSTENCILOP_DECR);
+	}
 #endif
 	DrawSortMaterialShadowStrencilOneSide();
 
     // Restore render states
 #ifdef PERIMETER_D3D9
-    rd->SetRenderState( D3DRS_SHADEMODE, D3DSHADE_GOURAUD );
+	if (rd) {
+		rd->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+	}
 #endif
     RenderDevice->SetRenderState( RS_CULLMODE, CULL_CCW );
     RenderDevice->SetRenderState( RS_ZWRITEENABLE,     true );
@@ -1389,7 +1380,7 @@ void cCameraPlanarLight::DrawScene()
     uint32_t fogenable = RenderDevice->GetRenderState(RS_FOGENABLE);
 	RenderDevice->SetRenderState(RS_FOGENABLE,false);
 	
-	RenderDevice->Draw(GetScene());
+	RenderDevice->DrawScene(GetScene());
 
     RenderDevice->SetRenderState( RS_ZFUNC, zfunc );
 	RenderDevice->SetRenderState(RS_FOGENABLE,fogenable);
@@ -1431,6 +1422,6 @@ void TempDrawShadow(cCamera* camera)
     db->AutoUnlock();
     db->Draw();
 
-    gb_RenderDevice->SetRenderState(RS_ZWRITEENABLE, TRUE);
+    gb_RenderDevice->SetRenderState(RS_ZWRITEENABLE, true);
     gb_RenderDevice->SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
 }

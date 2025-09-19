@@ -127,7 +127,7 @@ public:
 
 	int playersAmountScenarioMax() const { return playerAmountScenarioMax; }
 	int playersAmount() const;
-	int playersMaxEasily() const;
+	int playerSlotsAvailable() const;
 
 	void packPlayerIDs();
 
@@ -171,7 +171,9 @@ public:
 
     void fitPlayerArrays();
 
-	PlayerData& getActivePlayerData();
+    const PlayerData* getPlayerData(int playerID) const;
+
+	PlayerData* getActivePlayerData();
 
     void clearData();
 
@@ -180,7 +182,7 @@ public:
             //Always output current version which is serialized with
             extern const char* currentShortVersion;
             PrmString versionOutput = currentShortVersion;
-            ar & WRAP_OBJECT(versionOutput);
+            ar & WRAP_NAME(versionOutput, "version");
         } else if (ar.isInput()) {
             ar & WRAP_OBJECT(version);
         }
@@ -224,6 +226,21 @@ public:
     XBuffer saveData = XBuffer(0, true); //Contains SavePrm content usually present in .spg
     XBuffer binaryData = XBuffer(0, true); //Contains compressed binary data (.bin, previously .gmp and .dat)
     XBuffer scriptsData = XBuffer(0, true); //Contains Scripts attributes
+
+    inline bool operator <(const MissionDescription& rhs) const {
+        if (missionName().empty() || rhs.missionName().empty()) {
+            return savePathContent() < rhs.savePathContent();
+        } else {
+            if (missionName() < rhs.missionName()) {
+                return true;
+            } else if (missionName() == rhs.missionName()) {
+                return savePathContent() < rhs.savePathContent();
+            }
+        }
+        return false;
+    }
+
+    void PrintInfo() const;
 
 private:
     std::string resolve_mission_path(const std::string& path);

@@ -1,6 +1,8 @@
 #ifndef PERIMETER_PLAYER_H
 #define PERIMETER_PLAYER_H
 
+#include "SampleParams.h"
+
 class AudioPlayer {
 protected:
     bool request_play = false;
@@ -28,15 +30,22 @@ public:
 class SpeechPlayer: public AudioPlayer {
 private:
     float volume = 1.0f;
+    GLOBAL_VOLUME global_volume_select = GLOBAL_VOLUME_CHANNEL;
     class SND_Sample* sample = nullptr;
+
+#ifdef GPX
+    std::string fileName;
+#endif
     
     void destroySample();
     
 public:
-    SpeechPlayer() = default;
+    int channel_group = SND_GROUP_SPEECH;
+    
+    SpeechPlayer();
     ~SpeechPlayer() override;
 
-    bool OpenToPlay(const char* fname, bool cycled);
+    bool OpenToPlay(const char* fname, bool cycled) override;
     void Stop() override;
     void Pause() override;
     void Resume() override;
@@ -44,6 +53,8 @@ public:
     bool IsPause() override;
     void SetVolume(float volume) override;
     
+    void SetVolumeSelection(GLOBAL_VOLUME selection);
+    GLOBAL_VOLUME GetVolumeSelection();
     float GetLen();
 };
 
@@ -58,14 +69,12 @@ private:
 
     //TODO workaround to not play music after fading out in SDL_mixer, remove once we use linear volume fading
     double music_faded_out_pos = 0;
-
-    void destroyMusic();
 public:
     MusicPlayer() = default;
 
     ~MusicPlayer() override;
 
-    bool OpenToPlay(const char* fname, bool cycled);
+    bool OpenToPlay(const char* fname, bool cycled) override;
     void Stop() override;
     void Pause() override;
     void Resume() override;

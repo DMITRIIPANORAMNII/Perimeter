@@ -1,6 +1,7 @@
 //Balmer,K-D Lab
 #include "StdAfx.h"
 #include "terra.h"
+#include "AIPrm.h"
 #include "ClusterFind.h"
 
 ////////////////////////////////////////////////////////////
@@ -589,7 +590,7 @@ ClusterFind::LINE_RET
 			xeq=ix;
 			yeq=iy;
 
-			bool debug_xor;
+			bool debug_xor = false;
             EmptyHeuristic eh = EmptyHeuristic();
 			HeuristicLine(xfrom,yfrom,xeq,yeq, 
                           dx,dy,walk_map,eh,debug_xor);
@@ -680,7 +681,7 @@ void ClusterFind::FindClusterFront(int x, int y, uint32_t to,
 	pone[0]=pnt;
 	size_one=1;
 
-	int num_point=1;
+	//int num_point=1;
 	uint32_t id=pmap[y * dx + x];
 
 	is_used[y*dx+x]=1;
@@ -718,7 +719,7 @@ void ClusterFind::FindClusterFront(int x, int y, uint32_t to,
 					if(w==0 && size_two<max_cell_in_front)
 					{
 						w=i+2;
-						num_point++;
+						//num_point++;
 
 						Front pnt;
 						pnt.x=xx;pnt.y=yy;
@@ -896,14 +897,14 @@ max_distance - желаемый сдвиг (равен расстоянию ме
 
 	bool first=true;
 	int iteration=0;
-	bool no_all_escape;
+	//bool no_all_escape;
 
 	const bool badd=true;
 	const uint8_t cmax_walk=4;
 
 	do
 	{
-		no_all_escape=false;//Ни одна из точек не перемещается
+		//no_all_escape=false;//Ни одна из точек не перемещается
 		
 		int maxd=first?(max_distance+1)/2:max_distance;
 		first=false;
@@ -967,7 +968,7 @@ max_distance - желаемый сдвиг (равен расстоянию ме
 
 				if(is_ok)
 				{
-					no_all_escape=true;
+					//no_all_escape=true;
 					cf.cur_len=curd;
 					out_path[i]=cur;
 					break;
@@ -987,25 +988,30 @@ max_distance - желаемый сдвиг (равен расстоянию ме
 
 }
 
-void ClusterFind::SetLater(bool enable_smooting,int _quant_of_build)
+void ClusterFind::SetLater(ClusterFindPrm* prm)
 {
-	quant_of_build=_quant_of_build;
+	quant_of_build=prm->rebuildQuants;
+    if (0 < prm->rebuildQuantsRandom) {
+        //Add some randomness to avoid running all in same quant
+        quant_of_build += terLogicRND(prm->rebuildQuantsRandom);
+    }
 
 	cur_quant_build=0;
 
-	if(enable_smooting)
-		Smooting();
+	if (prm->enableSmoothing) {
+        Smooting();
+    }
 
 	memset(pmap,0,dx*dy*sizeof(pmap[0]));
 
 	all_cluster.clear();
 	all_cluster.reserve(max_cluster_size);
 	all_cluster.resize(1);
-	Cluster* first_element=&all_cluster[0];
 	{
 		Cluster& c=all_cluster[0];
 		c.x=c.y=0;
-		c.xcenter=c.ycenter=0;
+		c.xcenter=0;
+        c.ycenter=0;
 		c.walk=0;
 		c.self_id=0;
 	}

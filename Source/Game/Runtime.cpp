@@ -1,3 +1,4 @@
+#include "../version.h"
 #include "StdAfx.h"
 
 #include "Umath.h"
@@ -17,7 +18,6 @@
 #include "Config.h"
 
 #include "PerimeterSound.h"
-#include "Controls.h"
 
 #include "MusicManager.h"
 
@@ -32,8 +32,13 @@
 #include "codepages/codepages.h"
 
 #include <SDL.h>
+#include <SDL_hints.h>
 #include <SDL_image.h>
 #include <SDL_vulkan.h>
+
+#ifdef GPX
+#include <c/gamepix.h>
+#endif
 
 #ifdef _WIN32
 #include <commdlg.h>
@@ -42,9 +47,15 @@
 //#define WINDOW_FULLSCREEN_FLAG SDL_WINDOW_FULLSCREEN
 #define WINDOW_FULLSCREEN_FLAG SDL_WINDOW_FULLSCREEN_DESKTOP
 
+#include "../HT/mt_config.h"
 #include "../HT/ht.h"
 #include "GraphicsOptions.h"
 #include "GameContent.h"
+#include "SoundScript.h"
+
+#ifdef GPX
+extern void pollGpxEvents();
+#endif
 
 const char* currentShortVersion = PERIMETER_VERSION;
 
@@ -55,6 +66,14 @@ const char* currentVersion =
 #endif
 #ifdef PERIMETER_DEBUG
 " Debug"
+#endif
+#ifdef PERIMETER_ARCH_64
+" 64b"
+#else
+" 32b"
+#endif
+#ifdef GPX
+" html5 v8"
 #endif
 ;
 
@@ -73,12 +92,19 @@ cTileMap* terMapPoint = NULL;
 int terBitPerPixel = 16;
 int terScreenRefresh = 0;
 int terScreenIndex = 0;
+#ifdef GPX
+constexpr int terFullScreen = 0;
+constexpr int terResizableWindow = 0;
+bool isRuntimePaused = false;
+#else
 int terFullScreen = 0;
 int terResizableWindow = 1;
+#endif
 int terScreenSizeX = 800;
 int terScreenSizeY = 600;
 float terGraphicsGamma = 1;
 int terGrabInput = 0;
+int terVSyncEnable = 1;
 int applicationRunBackground = 1;
 
 int terDrawMeshShadow = 2;
@@ -106,6 +132,7 @@ HWND hWndVisGeneric = nullptr;
 #endif
 
 extern char _bMenuMode;
+extern void PNetCenterNetQuant();
 
 SyncroTimer global_time;
 SyncroTimer frame_time;
@@ -243,7 +270,9 @@ void HTManager::init()
 	interpolation_timer_ = 0;
 	interpolation_factor_ = 0;
 
-    ErrH.SetPrefix(currentVersion);
+    std::string err_prefix = currentVersion;
+    err_prefix += " (A:" + std::to_string(computeArchFlags()) + ")";
+    ErrH.SetPrefix(err_prefix.c_str());
     ErrH.SetRestore(InternalErrorHandler);
     ErrH.SetCrash(CrashHandler);
 	SetAssertRestoreGraphicsFunction(RestoreGDI);
@@ -253,13 +282,14 @@ void HTManager::init()
 
 	allocation_tracking("before");
 
-	if (IniManager("Perimeter.ini").getInt("Game","ZIP")) {
+    IniManager perimeter_ini("Perimeter.ini");
+	if (perimeter_ini.getInt("Game","ZIP")) {
         ZIPOpen("resource.pak");
     }
 
 	PerimeterDataChannelLoad();
 
-	terMissionEdit = IniManager("Perimeter.ini").getInt("Game","MissionEdit");
+	terMissionEdit = perimeter_ini.getInt("Game","MissionEdit");
 	check_command_line_parameter("edit", terMissionEdit);
 
 	GameShell::preLoad();
@@ -270,9 +300,14 @@ void HTManager::init()
 
 	allocation_tracking("PerimeterGraphicsInit");
 	
-	InitSound(IniManager("Perimeter.ini").getInt("Sound","SoundEnable"), IniManager("Perimeter.ini").getInt("Sound","MusicEnable"));
+	InitSound();
 
 	gameShell = new GameShell(terMissionEdit);
+
+    SetVolumeMusic(terMusicVolume);
+    SNDSetVoiceVolume(terVoiceVolume);
+    SNDSetSoundVolume(terSoundVolume);
+    
     refresh_window_size(false);
 
 	allocation_tracking("PerimeterLogicInit");
@@ -286,8 +321,10 @@ void HTManager::done()
 		PerimeterDataChannelSave();
 	
 	// Logic
-	delete gameShell;
-	gameShell = 0;
+    if (gameShell) {
+        delete gameShell;
+        gameShell = nullptr;
+    }
 
 	FinitSound();
 	finitGraphics();
@@ -400,7 +437,7 @@ void PerimeterSetupDisplayMode() {
     }
 
     //Set current fullscreen state
-    if (windowFullscreen != terFullScreen) {
+    if (windowFullscreen != (terFullScreen != 0)) {
 #if PERIMETER_DEBUG
         printf("SDL_SetWindowFullscreen %d\n", terFullScreen);
 #endif
@@ -438,10 +475,10 @@ void PerimeterSetupDisplayMode() {
             if (SDL_GetWindowFlags(sdlWindow)&(SDL_WINDOW_MAXIMIZED|SDL_WINDOW_MINIMIZED)) {
                 SDL_RestoreWindow(sdlWindow);
             }
-            SDL_SetWindowSize(sdlWindow, mode.w, mode.h);
 #if PERIMETER_DEBUG
-            printf("SDL_SetWindowSize\n");
+            fprintf(stdout, "SDL_SetWindowSize %dx%d\n", mode.w, mode.h);
 #endif
+            SDL_SetWindowSize(sdlWindow, mode.w, mode.h);
             
             //Grab window
             if (terGrabInput) {
@@ -533,7 +570,7 @@ void PerimeterCreateWindow(uint32_t window_flags) {
     PerimeterSetupDisplayMode();
     
     //Grab input
-    if (terGrabInput && !terFullScreen) {
+    if (terGrabInput) {
         SDL_SetWindowGrab(sdlWindow, SDL_TRUE);
     }
 }
@@ -564,6 +601,20 @@ cInterfaceRenderDevice* SetGraph()
     
 	cInterfaceRenderDevice *IRenderDevice = CreateIRenderDevice(deviceSelection);
 
+#ifdef GPX
+    terBitPerPixel = 32;
+    terScreenSizeX = gpx()->sys()->getWidth();
+    terScreenSizeY = gpx()->sys()->getHeight();
+#ifdef EMSCRIPTEN
+    float minHeight = 600;
+    if (terScreenSizeY < minHeight) {
+        terScreenSizeY = minHeight;
+        terScreenSizeX = minHeight * gpx()->sys()->getWidth() / gpx()->sys()->getHeight();
+    }
+    printf("Display size: %dx%d\n", terScreenSizeX, terScreenSizeY);
+#endif
+    int ModeRender = RENDERDEVICE_MODE_RGB32 | RENDERDEVICE_MODE_WINDOW;
+#else
 	int ModeRender=0;
 	if (!isTrueFullscreen()) {
         ModeRender |= RENDERDEVICE_MODE_WINDOW;
@@ -573,9 +624,14 @@ cInterfaceRenderDevice* SetGraph()
     } else {
         ModeRender |= RENDERDEVICE_MODE_RGB16;
     }
+#endif
 
 //	if(HTManager::instance()->IsUseHT()) 		
         ModeRender |= RENDERDEVICE_MODE_MULTITHREAD;
+
+    if (terVSyncEnable) {
+        ModeRender |= RENDERDEVICE_MODE_VSYNC;
+    }
 
     if (deviceSelection != DEVICE_HEADLESS) {
         PerimeterCreateWindow(IRenderDevice->GetWindowCreationFlags());
@@ -602,10 +658,11 @@ void HTManager::initGraphics()
     terVisGeneric->SetFontRootDirectory(getLocRootPath());
 
 	terVisGeneric->SetEffectLibraryPath("RESOURCE\\FX","RESOURCE\\FX\\TEXTURES");
-
-	bool occlusion=IniManager("Perimeter.ini").getInt("Graphics","EnableOcclusion");
+    
+    IniManager perimeter_ini("Perimeter.ini");
+	bool occlusion=perimeter_ini.getInt("Graphics","EnableOcclusion");
 	terVisGeneric->EnableOcclusion(occlusion);
-	bool point_light=IniManager("Perimeter.ini").getInt("Graphics","EnablePointLight");
+	bool point_light=perimeter_ini.getInt("Graphics","EnablePointLight");
 	terVisGeneric->EnablePointLight(point_light);
 
 	terVisGeneric->SetFarDistanceLOD(terFarDistanceLOD);
@@ -654,7 +711,10 @@ void HTManager::initGraphics()
 
 void HTManager::finitGraphics()
 {
-	gameShell->done();
+    if (gameShell) {
+        delete gameShell;
+        gameShell = nullptr;
+    }
 
 	RELEASE(terLight);
 	if(terCamera){
@@ -692,69 +752,92 @@ void HTManager::finitGraphics()
 #ifdef _WIN32
         hWndVisGeneric = nullptr;
 #endif
+        SDL_GL_UnloadLibrary();
+        SDL_Vulkan_UnloadLibrary();
     }
 }
 
 //--------------------------------
 
-void InitSound(bool sound, bool music, bool firstTime)
+void LoadSoundScriptTable() {
+    SingletonPrm<SoundScriptTable>::load();
+
+    //Remove the sounds that are ET specific
+    if (!(terGameContentAvailable & GAME_CONTENT::PERIMETER_ET)) {
+         for (auto& i: soundScriptTable().table) {
+            if (i.name.value() != "voices") {
+                continue;
+            }
+
+            auto it_removed = std::remove_if(
+                i.data.begin(),
+                i.data.end(),
+                [] (SoundSetupPrm& prm) {
+                    return startsWith(prm.name.value(), "Electro");
+                }
+            );
+            i.data.erase(it_removed, i.data.end());
+        }
+    }
+}
+
+void InitSound()
 {
-	terSoundEnable = sound;
-	terMusicEnable = music;
-    
     int mixChannels = 30; //Default SDL_mixer is 8, DirectSound has 31
     int chunkSizeFactor = 12; //1056 bytes under 2 channel 22khz 16 bits 
+    terAudioEnable = true;
+    terSoundVolume = 0.75f;
+    terSpeechVolume = 0.75f;
+    terVoiceVolume = 0.75f;
+    terMusicVolume = 0.75f;
 
-    IniManager ini("Perimeter.ini");
-	if (firstTime) {
-		terSoundVolume = ini.getFloat("Sound","SoundVolume");
-		terMusicVolume = ini.getFloat("Sound","MusicVolume");
-        IniManager ini_no("Perimeter.ini", false);
-        ini_no.getInt("Sound","MixChannels", mixChannels);
-        ini_no.getInt("Sound","ChunkSize", chunkSizeFactor);
-	} else {
-        ini.putInt("Sound","SoundEnable", terSoundEnable);
-        ini.putInt("Sound","MusicEnable", terMusicEnable);
-    }
+    IniManager ini_no("Perimeter.ini", false);
+    ini_no.getInt("Sound","MixChannels", mixChannels);
+    ini_no.getInt("Sound","ChunkSize", chunkSizeFactor);
+    ini_no.getFloat("Sound","SoundVolume", terSoundVolume);
+    ini_no.getFloat("Sound","SpeechVolume", terSpeechVolume);
+    ini_no.getFloat("Sound","VoiceVolume", terVoiceVolume);
+    ini_no.getFloat("Sound","MusicVolume", terMusicVolume);
+
     if (terRenderDevice->GetRenderSelection() == DEVICE_HEADLESS
     || check_command_line("disable_sound") != nullptr) {
-        terSoundEnable = terMusicEnable = false;
+        terAudioEnable = false;
     }
 
-	if(terSoundEnable  || terMusicEnable){
-		static int inited = 0;
+    SNDSetLocDataDirectory(getLocDataPath().c_str());
+    SNDSetSoundDirectory("RESOURCE\\SOUNDS\\EFF\\");
 
-		SNDSetLocDataDirectory(getLocDataPath().c_str());
+    if (terAudioEnable) {
+#ifdef PERIMETER_DEBUG_ASSERT
+        terEnableSoundLog = 1;
+#endif
+        SNDEnableErrorLog(terEnableSoundLog != 0);
 
-		if(!inited){
-			inited = 1;
+        if (!SNDInitSound(mixChannels, chunkSizeFactor)) {
+            terAudioEnable = false;
+        }
+    }
 
-			SNDSetSoundDirectory("RESOURCE\\SOUNDS\\EFF\\");
-
-			if(terEnableSoundLog)
-				SNDEnableErrorLog("sound.txt");
-
-			if(SNDInitSound(mixChannels, chunkSizeFactor)){
-				SNDScriptPrmEnableAll();
-			} else {
-                terMusicEnable = false;
-                terSoundEnable = false;
-            }
-		}
-	
-		SetVolumeMusic( terMusicVolume );
-		SNDSetVolume( terSoundVolume );
-
-		SND2DPanByX(1, fSoundWidthPower);
-		snd_listener.SetZMultiple(fSoundZMultiple);
-	}
-
-	SNDEnableSound(terSoundEnable);
+    if (terAudioEnable) {
+        SNDEnableSound(0 < terSoundVolume);
+        SNDEnableVoices(0 < terVoiceVolume);
+        LoadSoundScriptTable();
+        SNDScriptPrmEnableAll();
+        SND2DPanByX(1, fSoundWidthPower);
+        snd_listener.SetZMultiple(fSoundZMultiple);
+    } else {
+        terMusicVolume = 0.0f;
+        terSpeechVolume = 0.0f;
+        terVoiceVolume = 0.0f;
+        terSoundVolume = 0.0f;
+        SNDEnableSound(false);
+        SNDEnableVoices(false);
+    }
 }
 
 void SoundQuant()
 {
-	if(!terSoundEnable)
+	if(!terAudioEnable)
 		return;
 
 	snd_listener.SetPos(terCamera->matrix());
@@ -767,12 +850,15 @@ void SoundQuant()
 
 void FinitSound()
 {
+    if(!terAudioEnable) {
+        return;
+    }
+
 	IniManager ini("Perimeter.ini");
 	ini.putFloat("Sound","SoundVolume", terSoundVolume);
-	ini.putFloat("Sound","MusicVolume", terMusicVolume);
-
-	if(!terSoundEnable && !terMusicEnable)
-		return;
+    ini.putFloat("Sound","MusicVolume", terMusicVolume);
+    ini.putFloat("Sound","SpeechVolume", terSpeechVolume);
+    ini.putFloat("Sound","VoiceVolume", terVoiceVolume);
 
 	SNDReleaseSound();
 }
@@ -839,12 +925,13 @@ void show_help() {
             "\n"
             "Multiplayer:\n"
             "    server=IP:PORT - Opens game in server mode and binds to address\n"
-            "    connect=IP:PORT - Connects to provided server address\n"
+            "    connect=IP:PORT - Connects as client to provided server address\n"
+            "    connect_room=ROOMID - Connects as client to provided room id\n"
             "    password=Password - Password to use as server or connecting to server\n"
             "    name=Name - Player name to use as server or connecting to server\n"
             "    save=savegame - Multiplayer save name to use to resume as server\n"
             "    room=Room - Game/room name for server, computed from server player name if empty\n"
-          //"    public=1 - Sets server to broadcast into public list\n" //TODO unimplemented yet
+            "    public=0/1 - Sets server to broadcast into public list or listen port only if 0\n"
             "\n"
             "Map loading args:\n"
             "    open=path/inside/Resource - Relative path inside resource, like Saves/Profile0/mysave\n"
@@ -855,6 +942,7 @@ void show_help() {
             "    resx=1280 resy=720 - Allows setting resolution to use\n"
             "    uianchor=0/1/2/3 - Controls UI anchoring when aspect ratio is wider than 4:3\n"
             "    GrabInput=0/1 - Controls window input grabbing\n"
+            "    VSync=0/1 - Enable or disables VSync"
             "    RunBackground=0/1 - Enables or disables running game while not focused\n"
             "    disable_sound=1 - Disables sound in this launch\n"
             "    initial_menu= - Tells game to load this menu screen as initial menu, examples can be SINGLE, MULTIPLAYER_LIST, BATTLE...\n"
@@ -871,7 +959,7 @@ void show_help() {
 }
 
 //------------------------------
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(GPX)
 int main(int argc, char *argv[]) {
     //Call SDL main init
     SDL_SetMainReady();
@@ -892,6 +980,85 @@ char* alloc_exec_arg_string(std::string arg, bool wrap_spaces) {
     strcpy(str, arg.c_str());
     return str;
 }
+#ifdef GPX
+void pauseRuntime() {
+    isRuntimePaused = true;
+}
+
+void resumeRuntime() {
+    isRuntimePaused = false;
+}
+#endif
+
+bool mainQuant() {
+    bool run = true;
+#ifdef GPX
+    if (isRuntimePaused) {
+        return run;
+    }
+
+    while (!gpx()->sys()->isTrustedDomain()) {
+        // pass
+    }
+#endif
+
+    app_event_poll();
+
+    //NetworkPause handler
+    static bool runapp = true;
+    if (applicationIsGo() != runapp) {
+        if (gameShell && (!gameShell->alwaysRun())) {
+            if (gameShell->getNetClient()) {
+                if (gameShell->getNetClient()->setPause(!applicationHasFocus())) {
+                    runapp = applicationIsGo();
+                }
+            }
+        }
+    }
+//		if(gameShell && (!gameShell->alwaysRun()) ){
+//			if(gameShell->getNetClient())
+//				gameShell->getNetClient()->pauseQuant(applicationIsGo()));
+//		}
+
+    if (applicationIsGo()) {
+        run = HTManager::instance()->Quant();
+    } else {
+#ifdef _WIN32
+        //TODO is this necessary under SDL2 in Win32?
+        WaitMessage();
+#endif
+    }
+
+    if (!MTConfig::multithreading()) {
+        PNetCenterNetQuant();
+    }
+
+#ifdef GPX
+    static bool gpx_ready = false;
+    if (!gpx_ready) {
+        gpx_ready = true;
+#ifdef EMSCRIPTEN
+        EM_ASM(({
+            Module["canvas"].addEventListener("pointerdown", () => {
+                if (!document.pointerLockElement) {
+                    Module["canvas"].requestPointerLock().catch((e) => console.error("Can't lock mouse", e));
+                }
+            });
+        }));
+#endif
+        gpx()->sys()->mainReady(true);
+    }
+    gpx()->async()->runNextTask();
+#endif
+
+    return run;
+}
+
+#ifdef EMSCRIPTEN
+void mainLoop() {
+    mainQuant();
+}
+#endif
 
 int SDL_main(int argc, char *argv[])
 {
@@ -901,7 +1068,7 @@ int SDL_main(int argc, char *argv[])
         if (arg == "help" || arg == "--help" || arg == "-h" || arg == "/?") {
             show_help();
         } else if (arg == "--version" || arg == "-v") {
-            printf("Perimeter %s\n%s\n", currentShortVersion, currentVersion);
+            printf("Perimeter %s (Arch: 0x%" PRIX64 ")\n", currentVersion, computeArchFlags());
             ErrH.Exit();
         }
     }
@@ -911,16 +1078,25 @@ int SDL_main(int argc, char *argv[])
 
     //Init clock
     initclock();
-
-    //Decode stacktrace if requested
-    decode_stacktrace();
     
     //Redirect stdio and print version
     ErrH.RedirectStdio();
-    printf("Perimeter %s - %s\n", currentShortVersion, currentVersion);
+    printf("Perimeter %s (Arch: 0x%" PRIX64 ")\n", currentVersion, computeArchFlags());
+
+    //Decode stacktrace if requested
+    decode_stacktrace();
 
     //Parse version string
     decode_version(currentShortVersion, currentVersionNumbers);
+
+    //Set DPI awareness, must be done before initializing SDL video subsystem
+    //Some old versions of SDL2 may not have this hint defined
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
+    SDL_SetHintWithPriority(SDL_HINT_WINDOWS_DPI_AWARENESS, "system", SDL_HINT_OVERRIDE);
+#endif
+#ifdef SDL_HINT_WINDOWS_DPI_SCALING
+    SDL_SetHintWithPriority(SDL_HINT_WINDOWS_DPI_SCALING, "0", SDL_HINT_OVERRIDE);
+#endif
 
     //Start SDL stuff
     int sdlresult = SDL_Init(SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_EVENTS);
@@ -931,6 +1107,9 @@ int SDL_main(int argc, char *argv[])
     if (sdlresult < 0) {
         ErrH.Abort("Error initializing SDLNet", XERR_CRITICAL, sdlresult, SDLNet_GetError());
     }
+    
+    //Init keys
+    initKeyboardMapping();
 
     //Do game content detection
     detectGameContent();
@@ -956,6 +1135,8 @@ int SDL_main(int argc, char *argv[])
         bool ok = create_directories(path);
         xassert(ok || std::filesystem::is_directory(std::filesystem::u8path(path)));
     }
+    std::string crash_path = get_content_root_path_str() + CRASH_DIR;
+    printf("CrashData path: '%s'\n", crash_path.c_str());
 
     //Load perimeter parameters
     int xprmcompiler = IniManager("Perimeter.ini", false).getInt("Game", "XPrmCompiler");
@@ -964,44 +1145,45 @@ int SDL_main(int argc, char *argv[])
         reload_parameters();
     }
 
-    g_controls_converter.LoadKeyNameTable();
+    int mt = 1;
+    IniManager("Perimeter.ini").getInt("Game", "HT", mt);
+    check_command_line_parameter("HT", mt);
+    MTConfig::setMultithreading(mt);
 
-    int ht = IniManager("Perimeter.ini").getInt("Game", "HT");
-    check_command_line_parameter("HT", ht);
-    HTManager* runtime_object = new HTManager(ht);
-    runtime_object->setUseHT(ht ? true : false);
-
+    auto runtime_object = new HTManager();
     xassert(!(gameShell && gameShell->alwaysRun() && terFullScreen));
 
-    bool run = true;
-    while (run) {
-        app_event_poll();
-
-        //NetworkPause handler
-        static bool runapp = true;
-        if (applicationIsGo() != runapp) {
-            if (gameShell && (!gameShell->alwaysRun())) {
-                if (gameShell->getNetClient()) {
-                    if (gameShell->getNetClient()->setPause(!applicationHasFocus())) {
-                        runapp = applicationIsGo();
-                    }
-                }
-            }
-        }
-//		if(gameShell && (!gameShell->alwaysRun()) ){
-//			if(gameShell->getNetClient())
-//				gameShell->getNetClient()->pauseQuant(applicationIsGo()));
-//		}
-
-        if (applicationIsGo()) {
-            run = runtime_object->Quant();
-        } else {
-#ifdef _WIN32
-            //TODO is this necessary under SDL2 in Win32?
-            WaitMessage();
-#endif
+    const char* cmdline_testcrash = check_command_line("testcrash");
+    if (cmdline_testcrash) {
+        if (*cmdline_testcrash == '0') {
+            uint32_t* tmp = nullptr;
+            uint32_t val = *tmp;
+            printf("crash %d\n", val);
+        } else if (*cmdline_testcrash == '1') {
+            uint64_t val = 0xDEADBEEF;
+            printf("addr %p\n", &val);
+            auto ptrfunc = reinterpret_cast<void (*)(uint32_t)>(&val);
+            ptrfunc(0x12345678);
+        } else if (*cmdline_testcrash == '2') {
+            void* ptr = malloc(102400);
+            memset(ptr, 0, 102400);
+            printf("addr %p\n", ptr);
+            auto ptrfunc = reinterpret_cast<void (*)(uint32_t)>(ptr);
+            ptrfunc(0x12345678);
         }
     }
+
+    printf("Starting main loop at: %" PRIu64 "\n", clock_us());
+
+#ifndef EMSCRIPTEN
+    while (mainQuant())  {
+        // pass
+    }
+#else
+    emscripten_set_main_loop(mainLoop, 0, true);
+#endif
+    
+    printf("Stopped main loop at: %" PRIu64 "\n", clock_us());
 
     delete runtime_object;
 	
@@ -1017,16 +1199,21 @@ int SDL_main(int argc, char *argv[])
         const char* exec_path = nullptr;
         std::vector<char*> exec_argv;
         for (int i = 0; i < app_argc; ++i) {
-            if (startsWith(app_argv[i], "tmp_")) {
+            std::string arg = app_argv[i];
+            if (startsWith(arg, "tmp_")) {
                 //These are passed internally and are not supposed to pass into next instance
+                continue;
+            }
+            if (startsWith(arg, "initial_menu") || startsWith(arg, "content_select")) {
+                //Ignore it as is only for first time, also some can cause game restart in a loop
                 continue;
             }
 
             if (i == 0) {
                 //Doesn't like "s
-                exec_path = alloc_exec_arg_string(app_argv[i], false);
+                exec_path = alloc_exec_arg_string(arg, false);
             }
-            exec_argv.emplace_back(alloc_exec_arg_string(app_argv[i], true));
+            exec_argv.emplace_back(alloc_exec_arg_string(arg, true));
         }
         
         //Add extra args
@@ -1081,6 +1268,9 @@ void app_event_poll() {
     //Iterate each SDL event that we may have queued since last poll
     SDL_Event event;
     bool closing = false;
+#ifdef GPX
+    pollGpxEvents();
+#endif
     while (SDL_PollEvent(&event) == 1) {
         if (sdlWindow && event.window.windowID && event.window.windowID != windowID) {
             //Event is for a window that is not current or window is not available
@@ -1108,7 +1298,7 @@ void app_event_poll() {
         switch (event.type) {
             case SDL_MOUSEBUTTONDOWN: {
                 //Grab window at click if window is resizable and is not already grabbed
-                if (terGrabInput && !terFullScreen && applicationHasFocus_ && sdlWindow && SDL_GetWindowGrab(sdlWindow) == SDL_FALSE) {
+                if (terGrabInput && applicationHasFocus_ && sdlWindow && SDL_GetWindowGrab(sdlWindow) == SDL_FALSE) {
                     SDL_SetWindowGrab(sdlWindow, SDL_TRUE);
                 }
                 break;
@@ -1179,20 +1369,7 @@ void app_event_poll() {
         
         if (closing) {
             if (gameShell) {
-                if (gameShell->GameActive && !isShiftPressed() && terRenderDevice->GetRenderSelection() != DEVICE_HEADLESS) {
-#ifdef PERIMETER_DEBUG
-                    //Nobody got time for this
-                    gameShell->terminate();
-#else
-                    //When game is running we want to gracefully shutdown the game by showing main menu
-                    sKey k(VK_ESCAPE, true);
-                    gameShell->KeyPressed(k);
-                    gameShell->KeyUnpressed(k);
-#endif
-                } else {
-                    //Terminate it
-                    gameShell->terminate();
-                }
+                onGameTerminationRequest();
             } else {
                 //No gameshell available, manually close stuff
                 SDL_ShowCursor(SDL_TRUE);

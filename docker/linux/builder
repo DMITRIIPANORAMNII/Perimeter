@@ -12,7 +12,13 @@ BUILD_DIR=$WORK_DIR/build/docker-linux
 #Replace system SDL2 with ours
 if [[ -d "$LIBS_ROOT/sdl" ]]; then
   cp -va $LIBS_ROOT/sdl/include/* /usr/include/
-  cp -va $LIBS_ROOT/sdl/lib/* /usr/lib/x86_64-linux-gnu/
+  SYSTEM_ARCH=$(uname -m)
+  SYSTEM_ARCH_LIBS="/usr/lib/${SYSTEM_ARCH}-linux-gnu/"
+  if [[ ! -d $SYSTEM_ARCH_LIBS ]]; then
+    echo "${SYSTEM_ARCH_LIBS} not found! maybe this arch '${SYSTEM_ARCH}' need's different path?"
+    exit 1
+  fi
+  cp -va $LIBS_ROOT/sdl/lib/* $SYSTEM_ARCH_LIBS
 fi
 
 #rm -rf $BUILD_DIR
@@ -27,7 +33,7 @@ cd $BUILD_DIR
 cmake -S $WORK_DIR -B $BUILD_DIR -G Ninja \
   -DFFMPEG_ROOT="$LIBS_ROOT/ffmpeg" \
   -DOPTION_LINKER=lld \
-  -DOPTION_LINK_LIBS="stdc++fs;pthread" \
+  -DOPTION_LINK_LIBS="stdc++fs;pthread;dl" \
   -DOPTION_STATIC_LIB_STD=ON \
   -DOPTION_DEBUG_ASSERT=OFF \
   -DOPTION_DXVK_1=ON \
@@ -35,10 +41,14 @@ cmake -S $WORK_DIR -B $BUILD_DIR -G Ninja \
   -DCMAKE_INSTALL_RPATH="\$ORIGIN" \
   $@`
 `
-  #-DSDL2_INCLUDE_DIR="$LIBS_ROOT/sdl/include/SDL2" \
-  #-DSDL2_LIBRARY="$LIBS_ROOT/sdl/lib/libSDL2.so" \
+
 # Build dependencies
 ninja dependencies
+
+if [[ -n "$CUSTOM_TARGET" ]]; then
+  ninja $CUSTOM_TARGET;
+  exit 0;
+fi
 
 # Build project
 ninja

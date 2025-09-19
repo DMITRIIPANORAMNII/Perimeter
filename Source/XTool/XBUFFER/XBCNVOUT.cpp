@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
+#include <cinttypes>
 #include "xutl.h"
 #include "xbuffer.h"
 #include "xerrhand.h"
@@ -147,7 +148,8 @@ int XBuffer::uncompress(XBuffer& output, uint32_t* len) {
 
     //Check if this buffer has enough data
     if (tell() + compressed_len > size) {
-        fprintf(stderr, "XBuffer decompression incomplete data len %d %d %zu\n", original_len, compressed_len, size);
+        xassert(0);
+        fprintf(stderr, "XBuffer decompression incomplete data len %" PRIi32 " compressed %" PRIi32 " size %" PRIsize "\n", original_len, compressed_len, size);
         return -1;
     }
     
@@ -176,8 +178,10 @@ int XBuffer::uncompress(XBuffer& output, uint32_t* len) {
         fprintf(stderr, "XBuffer decompression faild len %d ret %d\n", original_len, ret);
         return -2;
     }
-    if (uncompressed_len_out != original_len) {
-        fprintf(stderr, "XBuffer decompression len mismatch %lu %d\n", uncompressed_len_out, original_len);
+    
+    uint32_t uncompressed_len = static_cast<uint32_t>(uncompressed_len_out);
+    if (uncompressed_len != original_len) {
+        fprintf(stderr, "XBuffer decompression len mismatch %d %d\n", uncompressed_len, original_len);
         return -3;
     }
     

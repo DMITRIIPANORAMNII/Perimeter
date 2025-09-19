@@ -3,9 +3,14 @@ name: Linux Build
 on:
   push:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 env:
-  GH_CACHE_KEY: 3
+  GH_CACHE_KEY: 4
 
 jobs:
   build:
@@ -13,16 +18,23 @@ jobs:
       fail-fast: false
       matrix:
         env: [
-          {build_type: Release, arch: x86_64, name: "D3D9 + Sokol", cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON"},
-          {build_type: Debug,   arch: x86_64, name: "D3D9 + Sokol + Asserts", cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON -DOPTION_DEBUG_ASSERT=ON"},
+          {name: "Release",                       build_type: Release, arch: x86_64, os: ubuntu-latest,       upload: true,  cmake: ""},
+          {name: "Release",                       build_type: Release, arch: arm64,  os: ubuntu-latest-arm,   upload: true,  cmake: ""},
+          {name: "Debug",                         build_type: Debug,   arch: x86_64, os: ubuntu-latest,       upload: true,  cmake: ""},
+          {name: "Debug D3D9 + Sokol + Asserts",  build_type: Debug,   arch: x86_64, os: ubuntu-latest,       upload: false, cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON -DOPTION_DEBUG_ASSERT=ON"},
+          {name: "Release D3D9 + Sokol",          build_type: Release, arch: x86_64, os: ubuntu-latest,       upload: false, cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON"},
+          {name: "Debug D3D9",                    build_type: Debug,   arch: x86_64, os: ubuntu-latest,       upload: false, cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=OFF"},
+          {name: "Debug Sokol",                   build_type: Debug,   arch: x86_64, os: ubuntu-latest,       upload: false, cmake: "-DOPTION_D3D9=OFF -DOPTION_SOKOL=ON"},
+          {name: "Scripts Check",                 build_type: Release, arch: x86_64, os: ubuntu-latest,       upload: false, cmake: "-DOPTION_CHECK_SCRIPTS=ON "},
         ]
-    name: ${{matrix.env.build_type}} ${{matrix.env.arch}}
-    runs-on: ubuntu-latest
+    name: ${{matrix.env.name}} ${{matrix.env.arch}}
+    if: github.event.pull_request.draft != true
+    runs-on: ${{matrix.env.os}}
     container:
       image: "debian:buster"
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         id: cache
         with:
           path: |
@@ -33,6 +45,10 @@ jobs:
         run: |
           chmod a+x ./docker/linux/prepare_pkgs
           ./docker/linux/prepare_pkgs
+      - name: prepare boost
+        run: |
+          chmod a+x ./docker/prepare_boost
+          ./docker/prepare_boost
       - name: build ffmpeg
         run: |
           chmod a+x ./docker/linux/prepare_ffmpeg
@@ -45,6 +61,9 @@ jobs:
           ./docker/linux/prepare_sdl_pkgs
           ./docker/linux/prepare_sdl
         if: steps.cache.outputs.cache-hit != 'true'
+      - name: Scripts check
+        run: export CUSTOM_TARGET="ScriptsCheck"
+        if: matrix.env.name == 'Scripts Check'
       - name: build
         run: |
           chmod a+x ./docker/linux/builder
@@ -52,46 +71,8 @@ jobs:
           ./docker/linux/builder \
             -DCMAKE_BUILD_TYPE=${{matrix.env.build_type}} \
             ${{matrix.env.cmake}}
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: Perimeter ${{matrix.env.build_type}} ${{matrix.env.arch}}
           path: ./build/docker-linux/output/Perimeter.tar
-  check_build:
-    strategy:
-      fail-fast: false
-      matrix:
-        env: [
-          {build_type: Release, arch: x86_64, name: "D3D9 + Sokol", cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON"},
-          {build_type: Debug,   arch: x86_64, name: "D3D9 + Sokol", cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=ON"},
-          {build_type: Debug,   arch: x86_64, name: "D3D9", cmake: "-DOPTION_D3D9=ON -DOPTION_SOKOL=OFF"},
-          {build_type: Debug,   arch: x86_64, name: "Sokol", cmake: "-DOPTION_D3D9=OFF -DOPTION_SOKOL=ON"},
-          {build_type: Release, arch: x86_64, name: "Scripts Check", cmake: "-DOPTION_CHECK_SCRIPTS=ON "},
-        ]
-    name: Check build ${{matrix.env.build_type}} ${{matrix.env.arch}} ${{matrix.env.name}}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: update repos
-        run: sudo apt-get update
-      - name: install libs
-        run: sudo apt-get install cmake meson libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-mixer-dev libboost-dev libavcodec-dev libavformat-dev libavfilter-dev libswscale-dev zlib1g-dev libvulkan-dev glslang-tools lld
-      - name: create build dir
-        run: mkdir build
-      - name: configure
-        run: cmake .. -G Ninja \
-          -DCMAKE_BUILD_TYPE=${{matrix.env.build_type}} \
-          -DOPTION_DEBUG_ASSERT=ON \
-          -DOPTION_USE_BACKTRACE=ON \
-          ${{matrix.env.cmake}}
-        working-directory: build
-      - name: build dependencies
-        run: ninja dependencies
-        working-directory: build
-      - name: Scripts check
-        run: ninja ScriptsCheck
-        working-directory: build
-        if: matrix.env.name == 'Scripts Check'
-      - name: build project
-        run: ninja
-        working-directory: build
-        if: matrix.env.name != 'Scripts Check'
+        if: matrix.env.upload

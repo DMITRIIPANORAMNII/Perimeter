@@ -162,7 +162,7 @@ void vrtMap::deltaZone(sToolzerPMO& var) //(int x,int y,int rad,int smth,int dh,
 				case 1:
 					v = (int)(dd*1000000.0);
 					for(j = 0;j < max;j++)
-						if((int)XRnd(1000000) < v) voxSet((x + xx[j]) & clip_mask_x,(y + yy[j]) & clip_mask_y,h);
+						if((int)terLogicRND(1000000) < v) voxSet((x + xx[j]) & clip_mask_x,(y + yy[j]) & clip_mask_y,h);
 					break;
 				case 2:
 					v = (int)(dd*max);
@@ -359,15 +359,15 @@ void vrtMap::squareDeltaZone(sSquareToolzerPMO& var)//(int x,int y,int rad,int s
 			if(!h) h = dh > 0 ? 1 : -1;
 			v = (int)(dd*1000000.0);
 			//for(j = 0;j < max;j++) {
-			//	if((int)XRnd(1000000) < v) voxSet((x + xx[j]) & clip_mask_x,(y + yy[j]) & clip_mask_y,h);
+			//	if((int)terLogicRND(1000000) < v) voxSet((x + xx[j]) & clip_mask_x,(y + yy[j]) & clip_mask_y,h);
 			//}
 			for(j=-i; j<=i; j++){
-				if((int)XRnd(1000000) < v) voxSet((x + j) & clip_mask_x,(y + -i) & clip_mask_y, h);
-				if((int)XRnd(1000000) < v) voxSet((x + j) & clip_mask_x,(y + +i) & clip_mask_y, h);
+				if((int)terLogicRND(1000000) < v) voxSet((x + j) & clip_mask_x,(y + -i) & clip_mask_y, h);
+				if((int)terLogicRND(1000000) < v) voxSet((x + j) & clip_mask_x,(y + +i) & clip_mask_y, h);
 			}
 			for(j=-i+1; j<i; j++){
-				if((int)XRnd(1000000) < v) voxSet((x + +i) & clip_mask_x,(y + j) & clip_mask_y, h);
-				if((int)XRnd(1000000) < v) voxSet((x + -i) & clip_mask_x,(y + j) & clip_mask_y, h);
+				if((int)terLogicRND(1000000) < v) voxSet((x + +i) & clip_mask_x,(y + j) & clip_mask_y, h);
+				if((int)terLogicRND(1000000) < v) voxSet((x + -i) & clip_mask_x,(y + j) & clip_mask_y, h);
 			}
 
 		}
@@ -764,8 +764,10 @@ void vrtMap::renderQuant()
 //	start_timer_auto(TerrainRender, STATISTICS_GROUP_TOTAL);
 #endif //_GEOTOOL_
 
-	int nReg=0, optNReg=0;
-	double sReg=0., optSReg=0.;
+	//int nReg=0;
+    //int optNReg=0;
+	//double sReg=0;
+    //double optSReg=0.;
 
 	int listSize=renderAreas.size();
 	if(!listSize) return;
@@ -809,8 +811,8 @@ void vrtMap::renderQuant()
 			for(op=optimizeRAS.begin(); op!=optimizeRAS.end(); op++){
 				UpdateRegionMap(op->minx, begY, op->endx, endY );
 				//optSReg+=(op->endx-op->minx)* (endY-begY);
-				optSReg+=(op->endx-op->begx)* (endY-begY);
-				optNReg++;
+				//optSReg+=(op->endx-op->begx)* (endY-begY);
+				//optNReg++;
 			}
 			XSVec.clear();
 			optimizeRAS.clear();
@@ -847,8 +849,8 @@ loc_endRnrCycl:
 	for(op=optimizeRAS.begin(); op!=optimizeRAS.end(); op++){
 		UpdateRegionMap(op->minx, begY, op->endx, endY );
 		//optSReg+=(op->endx-op->minx)* (endY-begY);
-		optSReg+=(op->endx-op->begx)* (endY-begY);
-		optNReg++;
+		//optSReg+=(op->endx-op->begx)* (endY-begY);
+		//optNReg++;
 	}
 
 /*
@@ -910,35 +912,34 @@ void vrtMap::regRender(int LowX,int LowY,int HiX,int HiY,int changed)
 		if(minX>resultx)minX=resultx;
 	}*/
 /*	LowX=minX;*/
-	int mx; //СЕЙЧАС НЕ ИСПОЛЬЗУЕТСЯ !
 	extern void UpdateRegionMap(int x1,int y1,int x2,int y2);
 	if(LowX > HiX){
 		if(LowY> HiY){
-			mx=renderBox(LowX, LowY, H_SIZE-1, V_SIZE-1, changed);
+			renderBox(LowX, LowY, H_SIZE-1, V_SIZE-1, changed);
 			///UpdateRegionMap(mx, LowY, H_SIZE-1, V_SIZE-1);
-			mx=renderBox(0, 0, HiX, HiY, changed);
+			renderBox(0, 0, HiX, HiY, changed);
 			///UpdateRegionMap(0, 0, HiX, HiY);
-			mx=renderBox(0, LowY, HiX, V_SIZE-1, changed);
+			renderBox(0, LowY, HiX, V_SIZE-1, changed);
 			///UpdateRegionMap(0, LowY, HiX, V_SIZE-1);
-			mx=renderBox(LowX, 0, H_SIZE-1, HiY, changed);
+			renderBox(LowX, 0, H_SIZE-1, HiY, changed);
 			///UpdateRegionMap(mx, 0, H_SIZE-1, HiY);
 		}
 		else {
-			mx=renderBox(LowX, LowY, H_SIZE-1, HiY, changed);
+			renderBox(LowX, LowY, H_SIZE-1, HiY, changed);
 			///UpdateRegionMap(mx, LowY, H_SIZE-1, HiY);
-			mx=renderBox(0, LowY, HiX, HiY, changed);
+			renderBox(0, LowY, HiX, HiY, changed);
 			///UpdateRegionMap(0, LowY, HiX, HiY);
 		}
 	}
 	else { //С X все впорядке
 		if(LowY> HiY){
-			mx=renderBox(LowX, LowY, HiX, V_SIZE-1, changed);
+			renderBox(LowX, LowY, HiX, V_SIZE-1, changed);
 			///UpdateRegionMap(mx, LowY, HiX, V_SIZE-1);
-			mx=renderBox(LowX, 0, HiX, HiY, changed);
+			renderBox(LowX, 0, HiX, HiY, changed);
 			///UpdateRegionMap(mx, 0, HiX, HiY);
 		} 
 		else {
-			mx=renderBox(LowX, LowY, HiX, HiY, changed);
+			renderBox(LowX, LowY, HiX, HiY, changed);
 			///UpdateRegionMap(mx, LowY, HiX, HiY);
 		}
 	}
@@ -1136,11 +1137,11 @@ int vrtMap::RenderStr(int XL, int Y, int dx)
 	int tty=(Y*2-V_SIZE)<<firstShift4FractionY;
 	tty=tty*tty>>shift4Fraction; tty=tty*tty>>shift4Fraction; tty=tty*tty>>shift4Fraction; //tty=tty*tty>>shift4Fraction;
 
-	unsigned char *pa,*pc,*pah; 
+	unsigned char *pa,*pc; //*pah; 
 	int offY=offsetBuf(0,Y);
 	int offYh=offsetBuf(0,YCYCL(Y-1));
 	pa = &(AtrBuf[Y*XS_Buf]);
-	pah = &(AtrBuf[YCYCL(Y-1)*XS_Buf]);
+	//pah = &(AtrBuf[YCYCL(Y-1)*XS_Buf]);
 	pc = &(RnrBuf[Y*XS_Buf]);
 
 	int j=XL+dx;
@@ -1238,7 +1239,7 @@ int vrtMap::RenderStr(int XL, int Y, int dx)
 			int icosA;//=(A*iA_light + B*iB_light + C*iC_light)/L;
 //			float cosA;
 //			cosA=(A*A_light + B*B_light + C*C_light)/256.;
-			int lght;
+			int lght = 0;
 			if((material&FLAG_SPECULAR_MATERIAL)==0){//только диффузный цвет
 				material>>=SHIFT_4TYPE_MATERIALS;
 				if( h_s > ((int)V<<16)) {

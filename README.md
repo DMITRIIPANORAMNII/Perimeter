@@ -1,6 +1,6 @@
 # Периметр | Perimeter
 
-![Perimeter](https://cdn.akamai.steamstatic.com/steam/apps/289440/header.jpg)
+![Perimeter](https://cdn.akamai.steamstatic.com/steam/apps/2530170/header.jpg)
 
 [![Linux Build](https://github.com/KD-lab-Open-Source/Perimeter/actions/workflows/linux_build.yml/badge.svg)](https://github.com/KD-lab-Open-Source/Perimeter/actions/workflows/linux_build.yml)
 [![MacOS Build](https://github.com/KD-lab-Open-Source/Perimeter/actions/workflows/macos_build.yml/badge.svg)](https://github.com/KD-lab-Open-Source/Perimeter/actions/workflows/macos_build.yml)
@@ -10,6 +10,8 @@
 [![Join the chat at https://t.me/PerimeterGame](https://patrolavia.github.io/telegram-badge/chat.svg)](https://t.me/PerimeterGame)
 
 Discord: https://discord.com/invite/jg9G7cp
+
+Community in telegram: https://t.me/PerimeterGame
 
 ## About
 
@@ -22,6 +24,11 @@ purchased games in physical copies or digital stores.
 Some parts may still need fixing or be experimental, expect some unexpected behavior, artifacts, bugs or crashes.
 
 Issues for feature requests, suggestions, propositions, bugs, pull requests and other contributions are welcomed.
+
+## Where to play
+
+* Windows / Linux [Steam](https://store.steampowered.com/app/2530170/PERIMETER_Legate_Edition/)
+* Web [GamePix](https://www.gamepix.com/play/perimeter)
 
 ## Лицензией | License
 

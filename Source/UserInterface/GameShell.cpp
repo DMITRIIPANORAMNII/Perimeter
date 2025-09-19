@@ -48,6 +48,10 @@
 #include "codepages/codepages.h"
 #include <SDL.h>
 
+#ifdef GPX
+#include <c/gamepix.h>
+#endif
+
 int terShowFPS = 0;
 
 CShellIconManager   _shellIconManager;
@@ -119,6 +123,10 @@ windowClientSize_(1024, 768)
 {
 	gameShell = this;
 
+#ifdef PERIMETER_DEBUG
+    debugPrm_.load();
+#endif
+
 	scriptReelEnabled = false;
 
 	startedWithMainmenu = false;
@@ -134,7 +142,6 @@ windowClientSize_(1024, 768)
 	GameActive = false;
 	GameContinue = true;
 	showKeysHelp_ = false;
-	interfaceShowFlag_ = true;
 
 	autoSwitchAITimer = 0;
 
@@ -143,29 +150,32 @@ windowClientSize_(1024, 768)
 	reelAbortEnabled = true;
 	gamePausedByMenu = false;
 
-    IniManager("Perimeter.ini", false).getInt("Game","DoubleClickTime", doubleClickTime);
-    IniManager("Perimeter.ini", false).getInt("Game","DoubleClickDistance", doubleClickDistance);
+    IniManager perimeter_ini("Perimeter.ini");
+    IniManager perimeter_ini_nocheck("Perimeter.ini", false);
 
-	debug_allow_replay = true; //IniManager("Perimeter.ini", false).getInt("Game","EnableReplay");
+    perimeter_ini_nocheck.getInt("Game","DoubleClickTime", doubleClickTime);
+    perimeter_ini_nocheck.getInt("Game","DoubleClickDistance", doubleClickDistance);
 
-    terShowFPS = IniManager("Perimeter.ini").getInt("Game","ShowFPS");
+	debug_allow_replay = true; //perimeter_ini_nocheck.getInt("Game","EnableReplay");
+
+    terShowFPS = perimeter_ini_nocheck.getInt("Game","ShowFPS");
     check_command_line_parameter("show_fps", terShowFPS);
 
-    MainMenuEnable = IniManager("Perimeter.ini").getInt("Game","MainMenu");
+    MainMenuEnable = perimeter_ini.getInt("Game","MainMenu");
 	check_command_line_parameter("mainmenu", MainMenuEnable);
 	if(mission_edit)
 		MainMenuEnable = false;
 
 	currentSingleProfile.scanProfiles();
 	currentSingleProfile.setCurrentProfile(getStringSettings("ProfileName"));
-	if (!MainMenuEnable && currentSingleProfile.getCurrentProfileIndex() == -1) {
-		if (!currentSingleProfile.getProfilesVector().size()) {
-			currentSingleProfile.addProfile("Test");
+	if (!MainMenuEnable && !currentSingleProfile.isValidProfile()) {
+		if (currentSingleProfile.getProfilesVector().empty()) {
+			currentSingleProfile.addProfile("Legate");
 		}
 		currentSingleProfile.setCurrentProfileIndex(0);
 	}
 
-	float menuAnimSpeedCoeff = IniManager("Perimeter.ini").getFloat("Graphics","MenuAnimationSpeedFactor");
+	float menuAnimSpeedCoeff = perimeter_ini.getFloat("Graphics","MenuAnimationSpeedFactor");
 	_fEffectButtonTime1 *= menuAnimSpeedCoeff;
 	_fEffectButtonTime2 *= menuAnimSpeedCoeff;
 	_fEffectButtonTime3 *= menuAnimSpeedCoeff;
@@ -176,12 +186,12 @@ windowClientSize_(1024, 768)
 	bgEffectTime *= menuAnimSpeedCoeff;
 
 
-//	autoSwitchAIEnabled = check_command_line("autoSwitchAI") || IniManager("Perimeter.ini").getInt("Game","AutoSwitchAI");
+//	autoSwitchAIEnabled = check_command_line("autoSwitchAI") || perimeter_ini.getInt("Game","AutoSwitchAI");
 	autoSwitchAIEnabled = check_command_line("autoSwitchAI");
 
 	briefingEnabled = !(disableBriefing || check_command_line("disableBriefing"));
 
-	terCamera->setRestriction(IniManager("Perimeter.ini").getInt("Game","CameraRestriction") && !mission_edit);
+	terCamera->setRestriction(perimeter_ini.getInt("Game","CameraRestriction") && !mission_edit);
 	EnableDebugKeyHandlers = EnableDebugKeyHandlersInitial;
 
 	shotNumber_ = -1;
@@ -217,15 +227,16 @@ windowClientSize_(1024, 768)
 	activePlayerID_ = 0;
 	
 	mousePressControl_ = Vect2f::ZERO;
-	mapMoveStartPoint_ = Vect3f::ZERO;
+    mapMoveStartCamera_ = terScene->CreateCamera();
 
 	debugFont_ = terVisGeneric->CreateGameFont(sqshFontPopup, 15);
 
 	hotKeyManager = new HotKeyManager();
+    hotKeyManager->fillActions();
+    hotKeyManager->loadHotKeys();
 	_shellCursorManager.Load();
 
 #ifdef PERIMETER_DEBUG
-    debugPrm_.load();
     if(check_command_line("explore")){
         debugPrm_.edit();
         ErrH.Exit();
@@ -236,9 +247,10 @@ windowClientSize_(1024, 768)
 		ErrH.Abort("Pause!!!");
 	}
 
-    const char* server = check_command_line("server"); 
-    const char* connect = check_command_line("connect");
-    if (server || connect) {
+    const char* server = check_command_line("server");
+    const char* connect_addr = check_command_line("connect");
+    const char* connect_room = check_command_line("connect_room");
+    if (server || connect_addr || connect_room) {
         CommandLineData data;
         data.server = server != nullptr;
         
@@ -256,19 +268,34 @@ windowClientSize_(1024, 768)
             const char* roomName = check_command_line("room");
             if (roomName) data.roomName = roomName;
             data.address = server;
-		} else {
-            checkCmdLineArg(connect, "connect");
-            data.address = connect;
+            const char* publicCmdline = check_command_line("public");
+            data.publicHost = publicCmdline != nullptr && std::string(publicCmdline) != "0";
+		} else if (connect_room) {
+            checkCmdLineArg(connect_room, "connect_room");
+            NetRoomID room = strtoull(connect_room, nullptr, 10);
+            if (room == 0) {
+                ErrH.Abort("Couldn't parse connect_room to number");
+            }
+            data.roomID = room;
+            data.publicHost = true;
+            data.addressDefaultPort = NET_RELAY_DEFAULT_PORT;
+            if (connect_addr) {
+                data.address = connect_addr;
+            }
+        } else if (connect_addr) {
+            checkCmdLineArg(connect_addr, "connect");
+            data.address = connect_addr;
+            data.publicHost = false;
         }
-        data.publicHost = check_command_line("public") != nullptr;
 
         startCmdline(data);
+        return;
 	} else if (MainMenuEnable) {
 		startedWithMainmenu = true;
 		_shellIconManager.LoadControlsGroup(SHELL_LOAD_GROUP_MENU);
 		//_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_SCREEN1);
         
-        int splash = IniManager("Perimeter.ini").getInt("Game","StartSplash");
+        int splash = perimeter_ini.getInt("Game","StartSplash");
         check_command_line_parameter("start_splash", splash);
         if (splash) {
 			_bCursorVisible = 0;
@@ -367,13 +394,15 @@ GameShell::~GameShell()
 
 	HTManager::instance()->GameClose();
 
-	if(missionEditor_)
-		delete missionEditor_;
+	if (missionEditor_) {
+        delete missionEditor_;
+    }
 
-	_shellCursorManager.Done();
+	done();
 
-	if(NetClient)
-		delete NetClient;
+	if (NetClient) {
+        delete NetClient;
+    }
 
 	debugFont_->Release();
 	if (hotKeyManager) {
@@ -387,6 +416,14 @@ void GameShell::done() {
 	bgScene.done();
 	_shellIconManager.Done();
 	_shellCursorManager.Done();
+    if (mapMoveStartCamera_) {
+        mapMoveStartCamera_->Release();
+        mapMoveStartCamera_ = nullptr;
+    }
+    if (chaos) {
+        delete chaos;
+        chaos = nullptr;
+    }
 }
 
 void GameShell::terminate() {
@@ -410,9 +447,13 @@ void GameShell::switchToInitialMenu() {
 	_shellIconManager.SetModalWnd(0);
 }
 
-void GameShell::createNetClient() {
-    destroyNetClient();
-    NetClient = new PNetCenter();
+void GameShell::prepareNetClient() {
+    if (NetClient && NetClient->m_state != PNC_STATE__CLIENT_FIND_HOST) {
+        destroyNetClient();
+    }
+    if (!NetClient) {
+        NetClient = new PNetCenter();
+    }
 }
 
 void GameShell::destroyNetClient() {
@@ -424,6 +465,8 @@ void GameShell::destroyNetClient() {
 
 void GameShell::GameStart(const MissionDescription& mission)
 {
+    mission.PrintInfo();
+    
 	_WaitCursor();
 
 	setScriptReelEnabled(false);
@@ -438,8 +481,10 @@ void GameShell::GameStart(const MissionDescription& mission)
 		PlayerData* data = &CurrentMission.playersData[i];
         std::string playerName;
 		if (data->realPlayerType == REAL_PLAYER_TYPE_PLAYER && *(data->name()) == 0) {
-            if (currentSingleProfile.getCurrentProfileIndex() == -1 && currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
-                playerName = currentSingleProfile.getCurrentProfile().name;
+            if (currentSingleProfile.isValidProfile() && currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
+                playerName = currentSingleProfile.getCurrentProfile()->name;
+            } else {
+                playerName = getBelligerentName(data->belligerent);
             }
 		} else if (data->realPlayerType == REAL_PLAYER_TYPE_AI) {
             playerName = getBelligerentName(data->belligerent);
@@ -466,15 +511,16 @@ void GameShell::GameStart(const MissionDescription& mission)
 
 //	SetShadowType(terShadowType,terDrawMeshShadow,false);
 
-	//vMap.fullLoad(IniManager("Perimeter.ini").getInt("TD","FastLoad"));
+	//vMap.fullLoad(perimeter_ini.getInt("TD","FastLoad"));
 
 //	IniManager world_ini(GetTargetName(vMap.worldIniFile));
 //	FogStart = world_ini.getFloat("Visualization Parameters","FogStart");
 //	FogEnd = world_ini.getFloat("Visualization Parameters","FogEnd");
 //	world_ini.getFloatArray("Visualization Parameters","FogColor", 3, &FogColor.r);
 //	FogColor /= 255;
-	
-	setSpeed(IniManager("Perimeter.ini").getFloat("Game", "GameSpeed"));
+
+    IniManager perimeter_ini("Perimeter.ini");
+	setSpeed(perimeter_ini.getFloat("Game", "GameSpeed"));
 
 	terCamera->reset();
 
@@ -484,9 +530,7 @@ void GameShell::GameStart(const MissionDescription& mission)
     universe()->universalLoad(CurrentMission, this->savePrm(), LoadProgressUpdate);
     
 #ifdef PERIMETER_DEBUG
-    log_var(XRndGet());
     log_var(logicRND.get());
-    log_var(xm_random_generator.get());
     /*
     uint32_t attrcrc = startCRC32;
     attrcrc = getSerializationCRC<BinaryOArchive>(rigidBodyPrmLibrary(), attrcrc);
@@ -529,10 +573,10 @@ void GameShell::GameStart(const MissionDescription& mission)
 	LoadProgressBlock(1);
 	LoadProgressUpdate(1);
 
-	bool occlusion=IniManager("Perimeter.ini").getInt("Graphics","EnableOcclusion");
+	bool occlusion=perimeter_ini.getInt("Graphics","EnableOcclusion");
 	terVisGeneric->EnableOcclusion(occlusion);
 
-//	float particle_rate=IniManager("Perimeter.ini").getFloat("Graphics","ParticleRate");
+//	float particle_rate=perimeter_ini.getFloat("Graphics","ParticleRate");
 //	xassert(particle_rate>=0 && particle_rate<=1);
 //	terVisGeneric->SetGlobalParticleRate(particle_rate);
 
@@ -776,10 +820,42 @@ void GameShell::showWays() {
 	}
 }
 
-void renderEndScene() {
+void GameShell::renderEndScene() {
     //We need to flush, otherwise the primitive vertex will be after the cursor in the buffer
     terRenderDevice->FlushPrimitive2D();
     terRenderDevice->FlushPrimitive3D();
+    
+    //Draw FPS
+    static FPS fps;
+    fps.quant();
+    if(terShowFPS){
+        float fpsmin = 0.0f;
+        float fpsmax = 0.0f;
+        fps.GetFPSminmax(fpsmin,fpsmax);
+        char s[512];
+        char* p=s;
+        p+=sprintf(s,"  %s\n", currentVersion);
+        p+=sprintf(p,"  FPS=% 3.1f min=% 3.1f max=% 3.1f\n",fps.GetFPS(),fpsmin,fpsmax);
+
+        if (GameActive) {
+            float lpsmin, lpsmax;
+            HTManager::instance()->GetLogicFPSminmax(lpsmin, lpsmax);
+            p += sprintf(p, "  logic=% 2.1f min=% 2.1f\n", HTManager::instance()->GetLogicFps(), lpsmin);
+//		    p+=sprintf(p,"  scale time=%i\n",scale_time.delta());
+        }
+
+        if(debug_show_mouse_position){
+            Vect3f v;
+            if(terCamera->cursorTrace(gameShell->mousePosition(),v))
+                p+=sprintf(p, "  mouse=(%i,%i,%i)\n", xm::round(v.x), xm::round(v.y), xm::round(v.z));
+        }
+
+        xassert(p-s<sizeof(s));
+        terRenderDevice->SetFont(_pShellDispatcher->getFont());
+        terRenderDevice->OutText(0,16,s,sColor4f(1, 1, 1, 1));
+        terRenderDevice->SetFont(nullptr);
+    }
+
     //Draw cursor
     _shellCursorManager.draw();
     //End scene
@@ -831,16 +907,14 @@ void GameShell::Show()
 		if(showWireFrame_)
 			terRenderDevice->SetRenderState(RS_WIREFRAME,0);
 
-		if(interfaceShowFlag_)
+		if(_shellIconManager.interfaceShowFlag())
 			universe()->ShowInfo();
 
 		showWays();		
 
 		terRenderDevice->SetDrawTransform(terCamera->GetCamera());
-		if(debug_show_mode){
-            if (debug_show_mode != 2) {
-                show_dispatcher.clear();
-            }
+		if (debug_show_mode) {
+            MTAutoSingleThread debug_show_lock;
 			universe()->showDebugInfo();
 			show_dispatcher.draw();
 		}
@@ -950,15 +1024,6 @@ void GameShell::Show()
 }
 
 //--------------------------------------------------------
-inline int IsMapArea(const Vect2f& pos)
-{
-	if(!_shellIconManager.IsInterface())
-		return 1;
-
-	//return y < 580 && y > 10;
-	return pos.y < 0.255 && pos.y > -0.487;
-}
-
 Vect2f GameShell::convert(int x, int y) const 
 {
 	return Vect2f(float(x)/float(windowClientSize().x) - 0.5f, float(y)/float(windowClientSize().y) - 0.5f);
@@ -974,7 +1039,7 @@ void GameShell::EventHandler(SDL_Event& event) {
         if (reelAbortEnabled) {
             switch (event.type) {
                 case SDL_KEYUP: {
-                    int key = sKey(event.key.keysym, true).fullkey;
+                    int key = sKey(event.key.keysym).fullkey;
                     if (key == VK_SPACE || key == VK_ESCAPE || key == VK_END) {
                         reelManager.hide();
                     }
@@ -995,16 +1060,9 @@ void GameShell::EventHandler(SDL_Event& event) {
         return;
     }
 
-/*
-
-    switch(uMsg){
-        case WM_MOUSELEAVE:
-            MouseLeave();
-            break;
-    }
-*/
     //Sets the SDL2 text input mode according to current text edit mode in UI
-    if (_shellIconManager.isInEditMode() != SDL_IsTextInputActive()) {
+    bool text_input_active = SDL_TRUE == SDL_IsTextInputActive();
+    if (_shellIconManager.isInEditMode() != text_input_active) {
         if (_shellIconManager.isInEditMode()) {
             SDL_StartTextInput();
         } else {
@@ -1028,6 +1086,10 @@ void GameShell::EventHandler(SDL_Event& event) {
             }
             Vect2f where = convert(event.button.x, event.button.y);
             //printf("M %fx%f B %dn", where.x, where.y, event.button.button, pressed);
+            if (terRenderDevice->DebugUIIsEnabled()
+            && terRenderDevice->DebugUIMousePress(where, event.button.button, pressed)) {
+                break;
+            }
             switch (event.button.button) {
                 case SDL_BUTTON_LEFT:
                     if (doubleClick) {
@@ -1040,13 +1102,6 @@ void GameShell::EventHandler(SDL_Event& event) {
                         } else {
                             MouseLeftUnpressed(where);
                         }
-                    }
-                    break;
-                case SDL_BUTTON_MIDDLE:
-                    if (pressed) {
-                        MouseMidPressed(where);
-                    } else {
-                        MouseMidUnpressed(where);
                     }
                     break;
                 case SDL_BUTTON_RIGHT:
@@ -1062,6 +1117,15 @@ void GameShell::EventHandler(SDL_Event& event) {
                         }
                     }
                     break;
+                case SDL_BUTTON_MIDDLE:
+                    MouseButton(where, VK_MBUTTON, pressed);
+                    break;
+                case SDL_BUTTON_X1:
+                    MouseButton(where, VK_XBUTTON1, pressed);
+                    break;
+                case SDL_BUTTON_X2:
+                    MouseButton(where, VK_XBUTTON2, pressed);
+                    break;
                 default:
                     break;
             }
@@ -1070,7 +1134,9 @@ void GameShell::EventHandler(SDL_Event& event) {
         case SDL_MOUSEWHEEL: {
             bool normal = event.wheel.direction == SDL_MOUSEWHEEL_NORMAL;
             int delta = event.wheel.y * (normal ? 1 : -1);
-            MouseWheel(delta);
+            if (delta != 0) {
+                MouseWheel(delta);
+            }
             break;
         }
         case SDL_MOUSEMOTION: {
@@ -1082,11 +1148,11 @@ void GameShell::EventHandler(SDL_Event& event) {
             ));
             break;
         }
-        case SDL_KEYDOWN: {
-        case SDL_KEYUP:
+        case SDL_KEYDOWN:
+        case SDL_KEYUP: {
             bool editMode = _shellIconManager.isInEditMode();
             SDL_KeyboardEvent key = event.key;
-            s = sKey(key.keysym, true);
+            s = sKey(key.keysym);
             if (editMode && s.fullkey == ('V' | KBD_CTRL)) {
                 //Pasting keycombo, discard normal keydown/up
                 if (key.state == SDL_PRESSED && SDL_HasClipboardText()) {
@@ -1218,10 +1284,10 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 		CurrentMission.saveMission(data, false);
 		} break; 
 		
-	case KBD_CTRL | VK_F11:
+	case VK_F11 | KBD_CTRL:
 		startStopRecordMovie();
 		break;
-	case VK_F12 | KBD_CTRL: 
+	case VK_F12 | KBD_CTRL | KBD_SHIFT: 
 		m_ShellDispatcher.OnInterfaceMessage(UNIVERSE_INTERFACE_MESSAGE_GAME_VICTORY);
 		break; 
 	case VK_F12 | KBD_SHIFT: 
@@ -1295,7 +1361,12 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 		break;
 
 	case VK_F6:
-		terRenderDevice->Flush(true);
+#ifdef PERIMETER_DEBUG
+		if (isShiftPressed()) {
+			terRenderDevice->StartCaptureFrame();
+			break;
+		}
+#endif
         SDL_ShowCursor(SDL_TRUE);
 		profiler_start_stop();
         SDL_ShowCursor(SDL_FALSE);
@@ -1306,9 +1377,9 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 		debug_variation = 1 - debug_variation;
 		break;
 
-	case 'M' | KBD_CTRL:
-		rememberPlayerCamera(universe()->activePlayer(), "Camera");
-		break;
+    case 'R' | KBD_CTRL:
+        terRenderDevice->DebugUISetEnable(!terRenderDevice->DebugUIIsEnabled());
+        break;
 
 	case 'M':
 		terCamera->setRestriction(!terCamera->restricted());
@@ -1330,7 +1401,7 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 		terVisGeneric->SetNearDistanceLOD(terNearDistanceLOD );
 		break;
 
-	case 'S':
+	case 'S' | KBD_CTRL | KBD_SHIFT:
 		if(!missionEditor()){
 			std::string name = CurrentMission.savePathContent();
 			size_t pos = name.rfind(PATH_SEP);
@@ -1352,7 +1423,7 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 		}
 		break;
 		}
-    case 'S' | KBD_CTRL | KBD_SHIFT: {
+    case 'S' | KBD_CTRL | KBD_ALT: {
         std::string saveName = CurrentMission.savePathContent();
         universalSave(saveName.c_str(), false);
     } break;
@@ -1387,17 +1458,6 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 	case 'X'|KBD_SHIFT:
 		universe()->activePlayer()->setAI(!universe()->activePlayer()->isAI());
         break;
-	case 'F':
-		terShowFPS ^= 1;
-//		gb_VisGeneric->SetShadowMapSelf4x4(terShowFPS);
-/*
-		if(terShowFPS)
-			terVisGeneric->SetFontDirectory("russian");
-		else
-			terVisGeneric->SetFontDirectory("courier");
-		terVisGeneric->ReloadAllFont();
-*/
-		break;
 	case 'G':
 		terEnableGDIPixel=!terEnableGDIPixel;
 		gb_VisGeneric->SetShadowMapSelf4x4(terEnableGDIPixel);
@@ -1416,13 +1476,20 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 	case VK_SPACE:
 		showWireFrame_ = !showWireFrame_;
 		break;
-	case VK_F8:
-		_shellIconManager.Toggle(GameActive);
-		interfaceShowFlag_ ^= 1;
-		break;
+    case VK_F8 | KBD_SHIFT:
+        if (!_shellIconManager.isCutSceneMode()) {
+            _shellIconManager.Toggle(GameActive);
+            _shellIconManager.toggleInterfaceShowFlag();
+        }
+        break;
+    case VK_F8:
+        if (!_shellIconManager.isCutSceneMode()) {
+            _shellIconManager.toggleInterfaceShowFlag();
+        }
+        break;
 	case VK_F7:
-		interfaceShowFlag_ ^= 1;
-		_shellIconManager.setCutSceneMode(!interfaceShowFlag_);
+		_shellIconManager.toggleInterfaceShowFlag();
+		_shellIconManager.setCutSceneMode(!_shellIconManager.interfaceShowFlag());
 		break;
 	case 'D':
 		universe()->select.explodeUnit();
@@ -1435,8 +1502,7 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 	case 'Q':
 		if(!terRenderDevice->IsFullScreen())
 		{
-			terFilthSpotID SelectFilth();
-			terFilthSpotID id=SelectFilth();
+			terFilthSpotID id=MissionEditor::SelectFilth();
 
 			if(id!=FILTH_SPOT_ID_NONE)
 			{
@@ -1449,8 +1515,7 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 			Vect3f v;
 			if(universe()->worldPlayer() && terCamera->cursorTrace(mousePosition(),v))
 			{
-				terUnitAttributeID SelectGeo();
-				terUnitAttributeID id=SelectGeo();
+				terUnitAttributeID id=MissionEditor::SelectGeo();
 				if(id!=UNIT_ATTRIBUTE_NONE)
 				{
 					terGeoControl* p = safe_cast<terGeoControl*>(universe()->worldPlayer()->buildUnit(id));
@@ -1460,29 +1525,24 @@ bool GameShell::DebugKeyPressed(sKey& Key)
 			}
 		}
 		break;
-
-/*
-	//for ATI
-	case '0'|KBD_CTRL:
+	case '0'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_INFO);
 		break;
-	case '1'|KBD_CTRL:
+	case '1'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_NORMAL);
 		break;
-	case '2'|KBD_CTRL:
+	case '2'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_SHADOW);
 		break;
-	case '3'|KBD_CTRL:
+	case '3'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_REDLECTION);
 		break;
-	case '4'|KBD_CTRL:
+	case '4'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_TILEMAP);
 		break;
-	case '5'|KBD_CTRL:
+	case '5'|KBD_CTRL|KBD_SHIFT:
 		gb_VisGeneric->XorShowType(SHOW_OBJECT);
 		break;
-*/		
-	//end for ATI
 	case 'Z':
 		decrSpeed();
 		break;
@@ -1510,9 +1570,11 @@ void GameShell::KeyPressed(sKey& Key)
         terminate();
         return;
     }
-    
-	if(missionEditor_ && missionEditor_->keyPressed(Key))
-		return;
+
+    if (terRenderDevice->DebugUIIsEnabled()
+    && terRenderDevice->DebugUIKeyPress(&Key, true)) {
+        return;
+    }
 
 	if (Key.fullkey == (VK_F1|KBD_SHIFT|KBD_CTRL)) {
 #ifndef PERIMETER_DEBUG
@@ -1523,6 +1585,14 @@ void GameShell::KeyPressed(sKey& Key)
         }
 		return;
 	}
+
+    if (CaptureControlInput && CaptureControlInput(Key.fullkey, true)) {
+        return;
+    }
+
+    if (missionEditor_ && missionEditor_->keyPressed(Key)) {
+        return;
+    }
 
 	if(_bMenuMode){
 		if(EnableDebugKeyHandlers){
@@ -1557,13 +1627,31 @@ void GameShell::KeyPressed(sKey& Key)
 		return;
 	}
 
-	if (gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::MULTIPLAYER) {
+	if (_shellIconManager.IsInterface() && gameShell->currentSingleProfile.getLastGameType() == UserSingleProfile::MULTIPLAYER) {
 		CChatInGameEditWindow* chatEdit = (CChatInGameEditWindow*) _shellIconManager.GetWnd(SQSH_INGAME_CHAT_EDIT_ID);
 		CChatInfoWindow* chatInfo = (CChatInfoWindow*) _shellIconManager.GetWnd(SQSH_CHAT_INFO_ID);
 		if (Key.fullkey == VK_INSERT) {
+			bool wantedAlliesMode = false;
+			terPlayer* activePlayer = universe() ? universe()->activePlayer() : nullptr;
+			if (activePlayer && activePlayer->frame()) {
+				for (const auto& player : universe()->Players) {
+					if (!player->frame()
+                    || player->clan() != activePlayer->clan()
+                    || player->playerID() == activePlayer->playerID()) {
+                        continue;
+                    }
+                    RealPlayerType playerType = CurrentMission.getPlayerData(player->playerID())->realPlayerType;
+                    if (playerType == REAL_PLAYER_TYPE_PLAYER
+                    || playerType == REAL_PLAYER_TYPE_PLAYER_AI) {
+						wantedAlliesMode = true;
+						break;
+					}
+				}
+			}
+			
 			if (chatEdit->isVisible()) {
-				if (!chatEdit->alliesOnlyMode) {
-					chatEdit->alliesOnlyMode = true;
+				if (chatEdit->alliesOnlyMode != wantedAlliesMode) {
+					chatEdit->alliesOnlyMode = wantedAlliesMode;
 				} else {
 					chatEdit->Show(0);
 					_shellIconManager.SetFocus(0);
@@ -1574,7 +1662,7 @@ void GameShell::KeyPressed(sKey& Key)
 				chatEdit->Show(1);
 				chatInfo->setTime(-1);
 				chatInfo->Show(1);
-				chatEdit->alliesOnlyMode = true;
+				chatEdit->alliesOnlyMode = wantedAlliesMode;
 			}
 			return;
 		} else if (Key.fullkey == (VK_INSERT | KBD_CTRL) || Key.fullkey == (VK_SPACE | KBD_CTRL)) {
@@ -1614,146 +1702,84 @@ void GameShell::KeyPressed(sKey& Key)
 					resumeGame();
 			}
 			return;
-
-		case VK_F11:
+            
+        //Don't use plain F12 as conflicts with steam screenshotting
+		case VK_F12 | KBD_CTRL:
 			MakeShot();
 			break;
+
+#ifdef PERIMETER_DEBUG
+		case VK_F6 | KBD_SHIFT:
+			terRenderDevice->StartCaptureFrame();
+			break;
+#endif
 	}
 
 	ControlPressed(Key.fullkey);
-	hotKeyManager->keyPressed(Key.fullkey);
 }
 
-void GameShell::ControlPressed(int key)
+void GameShell::ControlPressed(uint32_t key)
 {
-	if (isScriptReelEnabled()) {
+	if (_bMenuMode || isScriptReelEnabled() || _shellIconManager.isCutSceneMode()) {
 		return;
 	}
-	if (_shellIconManager.IsInterface()) {
 
-		if (key >= '0' && key <= '9') {
-			if (universe()) {
-				universe()->select.selectGroup(key - '0');
-			}
-			return;
-		} else if (key >= ('0' + KBD_CTRL) && key <= ('9' + KBD_CTRL)) {
-			if (universe()) {
-				universe()->select.putCurrentSelectionToGroup(key - ('0' + KBD_CTRL));
-			}
-			return;
-		} else if (key >= ('0' + KBD_SHIFT) && key <= ('9' + KBD_SHIFT)) {
-			if (universe()) {
-				universe()->select.addCurrentSelectionToGroup(key - ('0' + KBD_SHIFT));
-			}
-			return;
-		}
-	}
-
-	int ctrl = g_controls_converter.control(key);
-	if (ctrl == CTRL_ESCAPE) {
-		//temp
-		if(_shellIconManager.IsInterface() && interfaceShowFlag_)
-		{
-			//if(MainMenuEnable)
-				EnterInMissionMenu();
-			//else if(!missionEditor() && !NetClient)
-			//	GameContinue = false;
-		}
-		return;
-	}
-	if (_shellIconManager.isCutSceneMode()) {
-		return;
-	}
-	switch(ctrl)
-	{
-		case CTRL_TIME_NORMAL:
-			if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
-				_shellIconManager.setNormalSpeed();
-			}
-			break;
-		case CTRL_TIME_DEC:
-			if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
-				_shellIconManager.decrSpeedStep();
-			}
-			break;
-		case CTRL_TIME_INC:
-			if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
-				_shellIconManager.incrSpeedStep();
-			}
-			break;
-
-		case CTRL_CAMERA_SAVE1:
-		case CTRL_CAMERA_SAVE2:
-		case CTRL_CAMERA_SAVE3:
-		case CTRL_CAMERA_SAVE4:
-		case CTRL_CAMERA_SAVE5:
-			terCamera->SaveCamera(ctrl - CTRL_CAMERA_SAVE1);
-			break;
-		case CTRL_CAMERA_RESTORE1:
-		case CTRL_CAMERA_RESTORE2:
-		case CTRL_CAMERA_RESTORE3:
-		case CTRL_CAMERA_RESTORE4:
-		case CTRL_CAMERA_RESTORE5:
-			terCamera->RestoreCamera(ctrl - CTRL_CAMERA_RESTORE1);
-			break;
+    bool handled = true;
+    int ctrl = g_controls_converter.key_control(key);
+    switch(ctrl)
+    {
+        default:
+            handled = false;
+            break;
 
 		case CTRL_CAMERA_MOUSE_LOOK:
-			if(IsMapArea(mousePosition()))
-				if(!cameraMouseTrack)
-				{
-					cameraMouseTrack = true;
-					mousePressControl_ = mousePosition();
-					_shellCursorManager.HideCursor();
-                    SDL_SetRelativeMouseMode(SDL_TRUE);
-				}
+			if (!cameraMouseTrack && !cameraMouseShift) {
+                cameraMouseTrack = true;
+                mousePressControl_ = mousePosition();
+                _shellCursorManager.HideCursor();
+                SDL_SetRelativeMouseMode(SDL_TRUE);
+            }
 			break;
 
-		case CTRL_CAMERA_MAP_SHIFT:
-			if(!cameraMouseShift){
-				cameraMouseShift = true;
-				_shellCursorManager.HideCursor();
-				
-				terCamera->cursorTrace(mousePosition(), mapMoveStartPoint_);
-			}
-			break;
-
-		case CTRL_CAMERA_TO_EVENT:
-			if (_shellIconManager.getMiniMapEventIcons().size()) {
-				terCamera->setCoordinate(CameraCoordinate(_shellIconManager.getMiniMapEventIcons().back().pos, terCamera->coordinate().psi(), terCamera->coordinate().theta(), terCamera->coordinate().distance()));
-			}
-			break;
-		case CTRL_TOGGLE_MUSIC:
-			InitSound(terSoundEnable, !terMusicEnable, false);
-			MusicEnable( terMusicEnable );
-			break;
-		case CTRL_TOGGLE_SOUND:
-			InitSound(!terSoundEnable, terMusicEnable, false);
-			historyScene.setupAudio();
-			_shellIconManager.setupAudio();
-			break;
-		case CTRL_LOAD:
-			prepareForInGameMenu();
-			_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_LOAD_IN_GAME_SCR);
-			break;
-		case CTRL_SAVE:
-			prepareForInGameMenu();
-			_shellIconManager.SwitchMenuScreens(-1, SQSH_MM_SAVE_GAME_SCR);
-			break;
-		case CTRL_HOLD_PRODUCTION:
-			universe()->toggleHold();
-			break;
-		case CTRL_TOGGLE_LIFEBARS:
-			m_ShellDispatcher.toggleAlwaysShowLifebars();
+		case CTRL_CAMERA_MOUSE_MOVE:
+            if (!cameraMouseShift && !cameraMouseTrack) {
+                setCameraMouseShift(true);
+            }
 			break;
 	}
+    
+    if (!handled) {
+        handled = hotKeyManager->keyPressed(key);
+        if (handled) {
+            gameShell->updatePosition();
+        }
+    }
+    
+    if (handled) {
+        if (lastActivatedControlKey != 0 && lastActivatedControlKey != key) {
+            //Release previous key
+            ControlUnpressed(lastActivatedControlKey);
+        }
+        lastActivatedControlKey = key;
+    }
 }
 
 void GameShell::KeyUnpressed(sKey& Key)
 {
-	if(missionEditor_ && missionEditor_->keyUnpressed(Key))
-		return;
+    if (terRenderDevice->DebugUIIsEnabled()
+    && terRenderDevice->DebugUIKeyPress(&Key, false)) {
+        return;
+    }
 
-	if(_bMenuMode){
+    if (CaptureControlInput && CaptureControlInput(Key.fullkey, false)) {
+        return;
+    }
+
+	if (missionEditor_ && missionEditor_->keyUnpressed(Key)) {
+        return;
+    }
+
+	if (_bMenuMode) {
 		_shellIconManager.OnKeyUp(Key.fullkey);
 		return;
 	}
@@ -1765,40 +1791,150 @@ void GameShell::KeyUnpressed(sKey& Key)
 
 	ControlUnpressed(Key.fullkey);
 	
-	if(Key.fullkey == VK_SHIFT)
-		bWasShiftUnpressed = true;
+	if (Key.fullkey == VK_SHIFT || Key.fullkey == VK_LSHIFT || Key.fullkey == VK_RSHIFT) {
+        bWasShiftUnpressed = true;
+    }
 }
 
-void GameShell::ControlUnpressed(int key)
+void GameShell::ControlUnpressed(uint32_t key)
 {
-	if (isScriptReelEnabled()) {
+	if (_bMenuMode || isScriptReelEnabled()) {
 		return;
 	}
-	if (_shellIconManager.isCutSceneMode()) {
-		return;
-	}
-	int ctrl = g_controls_converter.control(key);
+    
+    if (lastActivatedControlKey) {
+        //Check if base key is same and was unreleased
+        if ((lastActivatedControlKey & VK_MASK) == (key & VK_MASK)) {
+            key = lastActivatedControlKey;
+        }
+        /*
+        //If mod key was unpressed disable the control
+        uint32_t modflag = getModFlagFromKey(key & VK_MASK);
+        if (lastActivatedControlKey & modflag) {
+            key = lastActivatedControlKey;
+        }
+        */
+
+        if (lastActivatedControlKey == key) {
+            //Just unset
+            lastActivatedControlKey = 0;
+        }
+    }
+    
+	int ctrl = g_controls_converter.key_control(key);
+    if (ctrl == CTRL_ESCAPE) {
+        if(_shellIconManager.IsInterface() && _shellIconManager.interfaceShowFlag()) {
+            EnterInMissionMenu();
+        }
+        return;
+    }
+    
+    if (_shellIconManager.isCutSceneMode()) {
+        return;
+    }
+
+    bool handled = true;
 	switch(ctrl)
 	{
+        default:
+            handled = false;
+            break;
+
+        case CTRL_TIME_NORMAL:
+            if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
+                _shellIconManager.setNormalSpeed();
+            }
+            break;
+        case CTRL_TIME_DEC:
+            if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
+                _shellIconManager.decrSpeedStep();
+            }
+            break;
+        case CTRL_TIME_INC:
+            if (currentSingleProfile.getLastGameType() != UserSingleProfile::MULTIPLAYER) {
+                _shellIconManager.incrSpeedStep();
+            }
+            break;
+        case CTRL_CAMERA_SAVE1:
+        case CTRL_CAMERA_SAVE2:
+        case CTRL_CAMERA_SAVE3:
+        case CTRL_CAMERA_SAVE4:
+        case CTRL_CAMERA_SAVE5:
+            terCamera->SaveCamera(ctrl - CTRL_CAMERA_SAVE1);
+            break;
+        case CTRL_CAMERA_RESTORE1:
+        case CTRL_CAMERA_RESTORE2:
+        case CTRL_CAMERA_RESTORE3:
+        case CTRL_CAMERA_RESTORE4:
+        case CTRL_CAMERA_RESTORE5:
+            terCamera->RestoreCamera(ctrl - CTRL_CAMERA_RESTORE1);
+            break;
 		case CTRL_CAMERA_MOUSE_LOOK:
 			cancelMouseLook();
 			break;
-
-		case CTRL_CAMERA_MAP_SHIFT:
-			if(cameraMouseShift){
-				cameraMouseShift = false;
-				
-				if(_shellIconManager.IsInterface())
-					_shellCursorManager.ShowCursor();
-				
-				//восстановить положение курсора
-				//Vect2f v;
-				//ConvertWorldToScreen(_MapMoveStartPoint, v);
-				//SetCursorPos(v.x, v.y);
-				
-			}
+		case CTRL_CAMERA_MOUSE_MOVE:
+            setCameraMouseShift(false);
 			break;
+        case CTRL_CAMERA_TO_EVENT:
+            if (!_shellIconManager.getMiniMapEventIcons().empty()) {
+                terCamera->setPosition(_shellIconManager.getMiniMapEventIcons().back().pos);
+            }
+            break;
+        case CTRL_TOGGLE_MUSIC:
+        case CTRL_TOGGLE_SOUND:
+            break;
+        case CTRL_LOAD:
+            prepareForInGameMenu();
+            _shellIconManager.SwitchMenuScreens(-1, SQSH_MM_LOAD_IN_GAME_SCR);
+            break;
+        case CTRL_SAVE:
+            prepareForInGameMenu();
+            _shellIconManager.SwitchMenuScreens(-1, SQSH_MM_SAVE_GAME_SCR);
+            break;
+        case CTRL_HOLD_PRODUCTION:
+            universe()->toggleHold(true);
+            break;
+        case CTRL_RESUME_PRODUCTION:
+            universe()->toggleHold(false);
+            break;
+        case CTRL_TOGGLE_LIFEBARS:
+            m_ShellDispatcher.toggleAlwaysShowLifebars();
+            break;
+        case CTRL_TOGGLE_FPS:
+            terShowFPS ^= 1;
+            break;
 	}
+
+    if (handled) {
+        return;
+    }
+
+    if (_shellIconManager.IsInterface()) {
+        if (key >= '0' && key <= '9') {
+            if (universe()) {
+                universe()->select.selectGroup(key - '0');
+            }
+            return;
+        } else if (key >= ('0' + KBD_CTRL) && key <= ('9' + KBD_CTRL)) {
+            if (universe()) {
+                universe()->select.putCurrentSelectionToGroup(key - ('0' + KBD_CTRL));
+            }
+            return;
+        } else if (key >= ('0' + KBD_SHIFT) && key <= ('9' + KBD_SHIFT)) {
+            if (universe()) {
+                universe()->select.addCurrentSelectionToGroup(key - ('0' + KBD_SHIFT));
+            }
+            return;
+        }
+    }
+}
+
+void GameShell::setCaptureInputCallback(bool (*input_callback)(uint32_t key, bool press)) {
+    CaptureControlInput = input_callback;
+}
+
+bool GameShell::hasCaptureInputCallback() {
+    return CaptureControlInput != nullptr;
 }
 
 void GameShell::cancelMouseLook() {
@@ -1807,6 +1943,7 @@ void GameShell::cancelMouseLook() {
 		cameraMouseTrack = false;
         SDL_SetRelativeMouseMode(SDL_FALSE);
 		setCursorPosition(mousePressControl_);
+        mousePosition_ = mousePressControl_;
 
 		if(_shellIconManager.IsInterface())
 			_shellCursorManager.ShowCursor();
@@ -1823,8 +1960,14 @@ void GameShell::updatePosition()
 
 void GameShell::MouseMove(const Vect2f& pos, const Vect2f& rel)
 {
-	if(missionEditor_ && missionEditor_->mouseMove(pos))
-		return;
+    if (terRenderDevice->DebugUIIsEnabled()
+    && terRenderDevice->DebugUIMouseMove(pos)) {
+        return;
+    }
+
+	if (missionEditor_ && missionEditor_->mouseMove(pos)) {
+        return;
+    }
 
 	cameraCursorInWindow = true;
 
@@ -1850,33 +1993,41 @@ void GameShell::MouseMove(const Vect2f& pos, const Vect2f& rel)
 
 	_shellCursorManager.OnMouseMove(mousePosition().x+0.5f, mousePosition().y+0.5f);
 
-	if(!cameraMouseZoom && !cameraMouseShift && !cameraMouseTrack && !toolzerSizeTrack){
-		if(_pShellDispatcher->m_nState != STATE_TRACKING)
-			CursorOverInterface = _shellIconManager.OnMouseMove(mousePosition().x+0.5f, mousePosition().y+0.5f);
+	if (!cameraMouseZoom && !cameraMouseShift && !cameraMouseTrack && !toolzerSizeTrack) {
+		if(_pShellDispatcher->m_nState != STATE_TRACKING) {
+            CursorOverInterface = _shellIconManager.OnMouseMove(mousePosition().x + 0.5f, mousePosition().y + 0.5f);
+        }
 
 		m_ShellDispatcher.OnMouseMove(mousePosition().x+0.5f, mousePosition().y+0.5f);
 	}
 }
 
-void GameShell::MouseMidPressed(const Vect2f& pos) {
-	if(!_bMenuMode){
-		ControlPressed(sKey(VK_MBUTTON, true).fullkey);
-	}
-}
-void GameShell::MouseMidUnpressed(const Vect2f& pos) {
-	if(!_bMenuMode){
-		ControlUnpressed(sKey(VK_MBUTTON, true).fullkey);
+void GameShell::MouseButton(const Vect2f& pos, uint32_t key, bool pressed) {
+    key = sKey(key, true).fullkey;
+
+    if (CaptureControlInput && CaptureControlInput(key, pressed)) {
+        return;
+    }
+
+	if (!_bMenuMode) {
+        if (pressed) {
+            ControlPressed(key);
+        } else {
+            ControlUnpressed(key);
+        }
 	}
 }
 
 void GameShell::MouseLeftPressed(const Vect2f& pos)
 {
-	if (!_bMenuMode && isPressed(VK_RBUTTON)) {
-		ControlPressed(sKey(VK_MBUTTON, true).fullkey);
-	}
+    uint32_t key = sKey(VK_LBUTTON, true).fullkey;
+    if (CaptureControlInput && CaptureControlInput(key, true)) {
+        return;
+    }
 
-	if(missionEditor_ && missionEditor_->mouseLeftPressed(pos))
-		return;
+	if (missionEditor_ && missionEditor_->mouseLeftPressed(pos)) {
+        return;
+    }
 
 	if (universe()) {
         Event ev(Event::MOUSE_CLICK);
@@ -1887,7 +2038,7 @@ void GameShell::MouseLeftPressed(const Vect2f& pos)
 		setActivePlayerAIOff();
 	}
 
-	ControlPressed(sKey(VK_LBUTTON, true).fullkey);
+	ControlPressed(key);
 
 	if(!mouseLeftPressed())
 	{
@@ -1914,10 +2065,10 @@ void GameShell::MouseLeftPressed(const Vect2f& pos)
 
 void GameShell::MouseRightPressed(const Vect2f& pos)
 {
-
-	if (!_bMenuMode && isPressed(VK_LBUTTON)) {
-		ControlPressed(sKey(VK_MBUTTON, true).fullkey);
-	}
+    uint32_t key = sKey(VK_RBUTTON, true).fullkey;
+    if (CaptureControlInput && CaptureControlInput(key, true)) {
+        return;
+    }
 
 	if(missionEditor_ && missionEditor_->mouseRightPressed(pos))
 		return;
@@ -1926,7 +2077,7 @@ void GameShell::MouseRightPressed(const Vect2f& pos)
 		setActivePlayerAIOff();
 	}
 
-	ControlPressed(sKey(VK_RBUTTON, true).fullkey);
+	ControlPressed(key);
 
 	if(!mouseRightPressed())
 	{
@@ -1953,13 +2104,14 @@ void GameShell::MouseRightPressed(const Vect2f& pos)
 
 void GameShell::MouseLeftUnpressed(const Vect2f& pos)
 {
-	if (!_bMenuMode && cameraMouseTrack) {
-		ControlUnpressed(sKey(VK_MBUTTON, true).fullkey);
-	}
+    uint32_t key = sKey(VK_LBUTTON, true).fullkey;
+    if (CaptureControlInput && CaptureControlInput(key, false)) {
+        return;
+    }
 
-	ControlUnpressed(sKey(VK_LBUTTON, true).fullkey);
+	ControlUnpressed(key);
 
-	if(mouseLeftPressed()){
+	if (mouseLeftPressed()) {
 		mouseLeftPressed_ = false;
 		mousePositionDelta_ = pos - mousePosition();
 		mousePosition_ = pos;
@@ -1981,11 +2133,12 @@ void GameShell::MouseLeftUnpressed(const Vect2f& pos)
 
 void GameShell::MouseRightUnpressed(const Vect2f& pos)
 {
-	if (!_bMenuMode && cameraMouseTrack) {
-		ControlUnpressed(sKey(VK_MBUTTON, true).fullkey);
-	}
+    uint32_t key = sKey(VK_RBUTTON, true).fullkey;
+    if (CaptureControlInput && CaptureControlInput(key, false)) {
+        return;
+    }
 
-	ControlUnpressed(sKey(VK_RBUTTON, true).fullkey);
+	ControlUnpressed(key);
 
 	if(mouseRightPressed())
 	{
@@ -2007,7 +2160,7 @@ void GameShell::MouseRightUnpressed(const Vect2f& pos)
 
 void GameShell::MouseWheel(int delta)
 {
-	if(!_bMenuMode && GameActive && !isScriptReelEnabled()) {
+	if(!_bMenuMode && GameActive && _shellIconManager.IsInterface() && !isScriptReelEnabled() && !cameraMouseShift) {
         CChatInfoWindow* chatInfo = (CChatInfoWindow*) _shellIconManager.GetWnd(SQSH_CHAT_INFO_ID);
         if (!chatInfo || !chatInfo->isVisible() || !chatInfo->HitTest(mousePosition().x+0.5f, mousePosition().y+0.5f)) {
             terCamera->mouseWheel(delta);
@@ -2031,7 +2184,7 @@ void GameShell::OnWindowActivate()
 	cameraMouseShift = false;
 	cameraMouseTrack = false;
 	toolzerSizeTrack = false;
-	 _shellCursorManager.ShowCursor();
+	_shellCursorManager.ShowCursor();
 }
 
 void GameShell::MouseLeftDoubleClick(const Vect2f& pos)
@@ -2184,19 +2337,24 @@ void GameShell::CameraQuant()
 	}
 	
 	//смещение вслед за мышью
-	if(cameraMouseShift && MouseMoveFlag){
-		terCamera->shift(mousePositionDelta());
-		setCursorPosition(mapMoveStartPoint());
-		MousePositionLock = 1;
+	if (cameraMouseShift && MouseMoveFlag) {        
+        if (abs(mousePosition_.x) <= 0.5f) {
+            terCamera->shift(
+                    mapMoveStartCamera_,
+                    mapMoveStartCameraPos_,
+                    mapMoveStartWorldPos_,
+                    mousePosition_
+            );
+        }
 	}
 
     float delta = frame_time.delta() / 1000.0f;// * PerimeterCameraControlFPS / 1000.0f;
-	terCamera->quant(mousePositionDelta().x, mousePositionDelta().y, delta, cameraMouseTrack && MouseMoveFlag);
-	
+    terCamera->quant(mousePositionDelta().x, mousePositionDelta().y, delta, cameraMouseTrack && MouseMoveFlag);
+
 //	mousePositionDelta_ = Vect2f::ZERO;
 	MouseMoveFlag = 0;
 
-	if (!_bMenuMode && !isScriptReelEnabled()) {
+	if (!_bMenuMode && !cameraMouseShift && !isScriptReelEnabled()) {
 		terCamera->controlQuant();
 	}
 }
@@ -2309,7 +2467,7 @@ void CShellLogicDispatcher::updateSmallCamera() {
         sRectangle4f clip(-_small_camera_rect_dx, -_small_camera_rect_dy,
                           _small_camera_rect_dx, _small_camera_rect_dy);
         Vect2f focus(1.0f, 1.0f);
-        Vect2f zplane(30.0f, 10000.0f);
+        Vect2f zplane(30.0f, 1e5f);
         m_hCamera->SetFrustum(                          // устанавливается пирамида видимости
                 &center,								// центр камеры
                 &clip,									// видимая область камеры
@@ -2377,8 +2535,9 @@ bool CShellLogicDispatcher::ShowTerraform() const
 //------------------------------------------
 void GameShell::initResourceDispatcher()
 {
-	synchroByClock_ = IniManager("Perimeter.ini").getInt("Timer","SynchroByClock");
-    int sfr = IniManager("Perimeter.ini").getInt("Timer","StandartFrameRate");
+    IniManager perimeter_ini("Perimeter.ini");
+	synchroByClock_ = perimeter_ini.getInt("Timer","SynchroByClock");
+    int sfr = perimeter_ini.getInt("Timer","StandartFrameRate");
 	framePeriod_ = 1000/sfr;
 
 	check_command_line_parameter("synchro_by_clock", synchroByClock_);
@@ -2393,7 +2552,7 @@ void GameShell::initResourceDispatcher()
 	scale_time.set(synchroByClock_, framePeriod_, terMaxTimeInterval);
 
 
-	///setSpeed(IniManager("Perimeter.ini").getFloat("Game", "GameSpeed"));
+	///setSpeed(perimeter_ini.getFloat("Game", "GameSpeed"));
 }
 
 void GameShell::startResourceDispatcher()
@@ -2422,6 +2581,12 @@ void GameShell::setSpeed(float d)
 		SNDPausePush();
 	}
 	_shellIconManager.speedChanged(game_speed);
+
+#ifdef GPX
+    if (d < 1) {
+        gpx()->sdk4()->interstitialAd();
+    }
+#endif
 }
 
 void GameShell::setWindowClientSize(const Vect2i& size) {
@@ -2472,11 +2637,7 @@ void GameShell::rememberPlayerCamera(terPlayer* player, const char* triggerName)
 	if(universe()->activePlayer()->isWorld())
 		return;
 
-	SavePrm data;
-	if(!CurrentMission.loadMission(data))
-		return;
-	data.manualData.saveCamera(player->playerStrategyIndex(), triggerName);
-	CurrentMission.saveMission(data, false);
+    savePrm().manualData.saveCamera(player->playerStrategyIndex(), triggerName);
 }
 
 void GameShell::setCountDownTime(int timeLeft) {
@@ -2558,13 +2719,18 @@ void GameShell::updateResolution(bool change_depth, bool change_size, bool chang
         PerimeterSetupDisplayMode();
     }
     
-	int mode=RENDERDEVICE_MODE_RETURNERROR;
-	if(!isTrueFullscreen())
-		mode|=RENDERDEVICE_MODE_WINDOW;
-	if(terBitPerPixel==16)
-		mode|=RENDERDEVICE_MODE_RGB16;
-	else
-		mode|=RENDERDEVICE_MODE_RGB32;
+	int mode = RENDERDEVICE_MODE_RETURNERROR;
+	if (!isTrueFullscreen()) {
+        mode |= RENDERDEVICE_MODE_WINDOW;
+    }
+	if (terBitPerPixel==16) {
+        mode |= RENDERDEVICE_MODE_RGB16;
+    } else {
+        mode |= RENDERDEVICE_MODE_RGB32;
+    }
+    if (terVSyncEnable) {
+        mode |= RENDERDEVICE_MODE_VSYNC;
+    }
 
 	if(!terRenderDevice->ChangeSize(
 		terScreenSizeX,
@@ -2595,7 +2761,7 @@ void GameShell::updateResolution(bool change_depth, bool change_size, bool chang
 	}
 }
 
-void GameShell::serverMessage(LocalizedText* text) {
+void GameShell::serverMessage(const LocalizedText* text) {
     _shellIconManager.showHintChat(text, 5000);
 }
 
@@ -2606,9 +2772,18 @@ void GameShell::showReelModal(const char* videoFileName, const char* soundFileNa
 	} else {
 		path = videoFileName;
 	}
-    if (getExtension(path, false).empty()) {
+    std::string original_extension = string_to_lower(getExtension(path, false).c_str());
+    bool not_found = get_content_entry(path) == nullptr;
+    if (original_extension.empty() || not_found) {
+        if (!original_extension.empty() && not_found) {
+            //No file found, remove extension for auto finding other extension files
+            path = setExtension(path, nullptr);
+        }
         //Attempt to find extension, bik must be last as is the default one
         for (const auto& ext : { ".mkv", ".bik" }) {
+            if (!original_extension.empty() && original_extension == ext) {
+                continue;
+            }
             if (get_content_entry(path + ext)) {
                 path += ext;
                 break;
@@ -2640,19 +2815,14 @@ bool GameShell::isCutSceneMode() {
 }
 
 void GameShell::prepareForInGameMenu() {
-	if (cameraMouseTrack && IsMapArea(mousePosition())) {
+	if (cameraMouseTrack) {
 		cameraMouseTrack = false;
 		setCursorPosition(mousePressControl_);
 
 		if(_shellIconManager.IsInterface())
 			_shellCursorManager.ShowCursor();
 	}
-	if (cameraMouseShift) {
-		cameraMouseShift = false;
-		
-		if(_shellIconManager.IsInterface())
-			_shellCursorManager.ShowCursor();
-	}
+    setCameraMouseShift(false);
 	CancelEditWorkarea();
 	_shellCursorManager.m_bShowSideArrows=0;
 	_shellCursorManager.ShowCursor();
@@ -2705,6 +2875,8 @@ void GameShell::setLocalizedFontSizes() {
 }
 
 void GameShell::preLoad() {
+    g_controls_converter.LoadCtrlTable();
+
     const std::string& locale = getLocale();
     if (get_content_entry("RESOURCE/scenario_" + locale + ".hst")) {
         historyScene.loadProgram("RESOURCE/scenario_" + locale + ".hst");
@@ -2735,12 +2907,15 @@ void GameShell::preLoad() {
     //Load the builtin texts that might not be provided by mods
     texts.load_supplementary_texts(getLocale());
     texts.load_replacement_texts(getLocale());
+
+    //Preload key name strings
+    g_controls_converter.LoadKeyNames();
     
     //Setup initial menu
     const char* initial_menu_str = check_command_line("initial_menu");
     if (initial_menu_str) {
         std::string initial_menu = std::string("SQSH_MM_") + initial_menu_str + "_SCR";
-        int id = getEnumDescriptor(SQSH_MM_START_SCR).keyByName(initial_menu.c_str());
+        int id = getEnumDescriptor(SQSH_MM_START_SCR)->keyByName(initial_menu.c_str());
         if (id < SQSH_MM_START_SCR || id >= SQSH_MM_SCREENS_MAX) {
             fprintf(stderr, "Initial menu %s not found\n", initial_menu.c_str());
         } else {
@@ -2764,7 +2939,7 @@ void GameShell::recreateChaos() {
 void GameShell::createChaos() {
 	if (chaos) {
 		delete chaos;
-		chaos=0;
+		chaos= nullptr;
 	}
 
 	chaos = new CChaos(vMap.H_SIZE,vMap.V_SIZE,terEnableBumpChaos);
@@ -2863,4 +3038,35 @@ void GameShell::editParameters()
 	terCamera->setFocus(HardwareCameraFocus);
     SDL_ShowCursor(SDL_FALSE);
 	RestoreFocus();
+}
+
+void GameShell::setCameraMouseShift(bool _cameraMouseShift) {
+    if (_cameraMouseShift) {
+        if (terCameraType::cursorTrace(
+                terCamera->GetCamera(),
+                mousePosition_,
+                &mapMoveStartWorldPos_,
+                true,
+                true
+        )) {
+            terCamera->GetCamera()->SetCopy(mapMoveStartCamera_);
+            mapMoveStartCameraPos_ = terCamera->coordinate().position();
+        } else {
+            //Couldn't pick raytrace, abort
+            _cameraMouseShift = false;
+        }
+    }
+    if (cameraMouseShift == _cameraMouseShift) {
+        return;
+    }
+
+    cameraMouseShift = _cameraMouseShift;
+
+    if (cameraMouseShift){
+        _shellCursorManager.HideCursor();
+    } else {
+        if (_shellIconManager.IsInterface()) {
+            _shellCursorManager.ShowCursor();
+        }
+    }
 }

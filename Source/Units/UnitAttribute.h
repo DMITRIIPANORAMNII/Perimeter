@@ -45,7 +45,6 @@ DECLARE_ENUM_DESCRIPTOR(WeaponType)
 DECLARE_ENUM_DESCRIPTOR(EnvironmentalDamageType)
 DECLARE_ENUM_DESCRIPTOR(SoundID)
 DECLARE_ENUM_DESCRIPTOR(ChainNodeID)
-DECLARE_ENUM_DESCRIPTOR(ShellControlID)
 DECLARE_ENUM_DESCRIPTOR(ShellControlType)
 DECLARE_ENUM_DESCRIPTOR(Difficulty)
 DECLARE_ENUM_DESCRIPTOR(terBelligerent)
@@ -57,13 +56,13 @@ DECLARE_ENUM_DESCRIPTOR(terEffectID)
 DECLARE_ENUM_DESCRIPTOR(PlacementStrategy)
 DECLARE_ENUM_DESCRIPTOR(ChooseSquadID)
 DECLARE_ENUM_DESCRIPTOR(GAME_CONTENT)
+DECLARE_ENUM_DESCRIPTOR(ShellControlID)
 DECLARE_ENUM_DESCRIPTOR_ENCLOSED(RigidBodyPrm, RigidBodyType)
 #endif
 
 typedef std::vector<Vect2f> Vect2fVect;
 typedef std::vector<Vect2i> Vect2iVect;
 typedef std::vector<Vect3f> Vect3fVect;
-typedef std::vector<Vect3f> Vect3fList;
 
 class AttributeBase;
 class EffectKey;
@@ -1712,8 +1711,9 @@ inline void setKeyC(AttributeIDBelligerent& data, const char* str) {
 	std::string bName(&aName[pos], aName.size() - pos - 2);
 	aName.erase(pos, aName.size());
 	data = AttributeIDBelligerent(
-		getEnumDescriptor(UNIT_ATTRIBUTE_NONE).keyByNameAlt(aName.c_str()),
-		getEnumDescriptor(BELLIGERENT_NONE).keyByNameAlt(bName.c_str()));
+		getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->keyByNameAlt(aName.c_str()),
+		getEnumDescriptor(BELLIGERENT_NONE)->keyByNameAlt(bName.c_str())
+    );
 }
 
 typedef TypeLibrary<AttributeIDBelligerent, AttributeBase> AttributeLibrary;

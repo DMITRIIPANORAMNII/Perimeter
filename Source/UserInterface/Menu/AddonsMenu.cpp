@@ -1,11 +1,11 @@
 #include "StdAfx.h"
-#include "MainMenu.h"
 #include "GameShell.h"
 #include "PerimeterShellUI.h"
 #include "MessageBox.h"
 #include "files/files.h"
 #include "GameContent.h"
 #include <filesystem>
+#include "MainMenu.h"
 
 extern bool menuChangingDone;
 bool pendingChanges = false;
@@ -35,6 +35,57 @@ void updateAddonsList(CListBoxWindow* list) {
     }
 }
 
+std::string GenerateInfoText(ModMetadata* mod, bool add_description) {
+    std::string popupTxt = "&FFFF00" + mod->mod_name;
+    popupTxt += "\n\n&AAAAAA";
+    popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.MetadataVersion");
+    popupTxt += " &FFFFFF" + mod->mod_version;
+    if (!mod->mod_authors.empty()) {
+        popupTxt += "\n&AAAAAA";
+        popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.MetadataAuthors");
+        popupTxt += " &FFFFFF" + mod->mod_authors;
+    }
+    if (!mod->mod_license.empty()) {
+        popupTxt += "\n&AAAAAA";
+        popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.MetadataLicense");
+        popupTxt += " &FFFFFF" + mod->mod_license;
+    }
+    if (!mod->mod_url.empty()) {
+        popupTxt += "\n&AAAAAA";
+        popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.MetadataSite");
+        popupTxt += " &FFFFFF" + mod->mod_url;
+    }
+    if (!mod->errors.empty()) {
+        popupTxt += "\n\n&FF0000";
+        popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.Errors");
+        for (std::string error : mod->errors) {
+            if (startsWith(error, "TEXT=")) {
+                error = qdTextDB::instance().getText(error.substr(5).c_str());
+            }
+            popupTxt += "\n" + error;
+        }
+    }
+    if (add_description && !mod->mod_description.empty()) {
+        popupTxt += "\n\n&AAAAAA";
+        popupTxt += qdTextDB::instance().getText("Interface.Menu.Mods.MetadataDescription");
+        popupTxt += "\n&FFFFFF" + mod->mod_description;
+    }
+
+    return popupTxt;
+}
+
+void updateAddonDescription(CListBoxWindow* list) {
+    CTextWindow* descr = dynamic_cast<CTextWindow*>(_shellIconManager.GetWnd(SQSH_MM_ADDONS_DESCR_TXT));
+    std::string text;
+    int pos = list->GetCurSel();
+    if (pos >= 0 && pos < gameModInfoList.size()) {
+        auto mod = gameModInfoList[pos].mod;
+        text = GenerateInfoText(mod, true);
+    }
+    
+    descr->SetText(text.c_str());
+}
+
 void loadAddonsList() {
     gameModInfoList.clear();
     for (auto& pair : getGameMods()) {
@@ -57,6 +108,7 @@ void loadAddonsList() {
     _shellIconManager.GetWnd(SQSH_MM_ADDONS_APPLY_BTN)->Enable(false);
     
     updateAddonsList(list);
+    updateAddonDescription(list);
 }
 
 void onMMAddonsButton(CShellWindow* pWnd, InterfaceEventCode code, int param) {
@@ -83,26 +135,34 @@ int addonsApplyConfirmationQuant(float, float) {
             if (!info.mod->available) {
                 continue;
             }
-            if (info.mod->enabled != info.wantedEnabled) {
-                std::string path = info.mod->path;
-                std::string newPath = path;
-                if (info.mod->enabled) {
-                    newPath += ".off";
-                } else {
-                    size_t pos = newPath.rfind(".off");
+            if (info.mod->enabled != info.wantedEnabled) {;
+                //Remove any .off that mod might have
+                if (info.wantedEnabled) {
+                    size_t pos = info.mod->path.rfind(".off");
                     if (pos != std::string::npos) {
+                        std::string newPath = info.mod->path;
                         newPath.erase(pos);
+
+                        std::error_code error;
+                        std::filesystem::rename(
+                                std::filesystem::u8path(info.mod->path),
+                                std::filesystem::u8path(newPath),
+                                error
+                        );
+                        if (error) {
+                            ErrH.Abort("Can't rename mod to remove '.off': ", XERR_USER, error.value(), error.message().c_str());
+                        }
+                        
+                        info.mod->path = newPath;
+                        //Rescan so mod config can be updated
+                        scan_resource_paths(newPath);
                     }
                 }
-                std::error_code error;
-                std::filesystem::rename(
-                        std::filesystem::u8path(path),
-                        std::filesystem::u8path(newPath),
-                        error
-                );
-                if (error) {
-                    ErrH.Abort("Can't change mod enable status: ", XERR_USER, error.value(), error.message().c_str());
-                }
+                
+                //Set mod config enabled state
+                std::string path_ini = info.mod->path + PATH_SEP + "mod_config.ini";
+                IniManager mod_ini = IniManager(path_ini.c_str(), false);
+                mod_ini.put("Mod", "enabled", info.wantedEnabled ? "true" : "false");
 
                 info.mod->enabled = info.wantedEnabled;
             }
@@ -172,8 +232,55 @@ void onMMAddonsList(CShellWindow* pWnd, InterfaceEventCode code, int param) {
             combo->size = addon.mod->available ? combo->Array.size() : 1;
             combo->pos = addon.wantedEnabled ? 1 : 0;
         }
+        updateAddonDescription(list);
     } else if ( code == EVENT_DOUBLECLICK && param == VK_LBUTTON) {
         addonEnableSwitch(list);
+    } else if ( code == EVENT_DRAWWND ) {
+        Vect2f mousePos = gameShell->mousePosition();
+        mousePos.x += 0.5f;
+        mousePos.y += 0.5f;
+
+        if (!list->HitTest(mousePos.x, mousePos.y)) {
+            return;
+        }
+        
+        Vect2i pt = {
+                xm::round(mousePos.x * terRenderDevice->GetSizeX()),
+                xm::round(mousePos.y * terRenderDevice->GetSizeY())
+        };
+        
+        int pos = list->ItemFromPoint(pt.y, false);
+        if (pos >= 0 && pos < gameModInfoList.size()) {
+            ModMetadata* mod = gameModInfoList[pos].mod;
+            
+            std::string text = GenerateInfoText(mod, false);
+
+            //Draw rect
+            terRenderDevice->SetFont(pWnd->m_hFont);
+            
+            Vect2f v1;
+            Vect2f v2;
+            terRenderDevice->OutTextRect(0, 0, text.c_str(), -1, v1, v2);
+
+            const float pad = 5;
+            Vect2f rectsize = {
+                    v2.x - v1.x + pad * 2,
+                    v2.y - v1.y + pad * 2
+            };
+            float x_max = terRenderDevice->GetSizeX() - rectsize.x - pad;
+            float y_max = terRenderDevice->GetSizeY() - rectsize.y - pad;
+            float y_move = rectsize.y + pad;
+            Vect2f rectpos = {
+                    min(max(pad, pt.x - rectsize.x / 2.0f), x_max),
+                    min(max(pad, pt.y + (mousePos.y < 0 ? -y_move : (pad + 40))), y_max)
+            };
+
+            terRenderDevice->DrawRectangle(rectpos.x, rectpos.y, rectsize.x, rectsize.y, sColor4c(32, 32, 32, 72), 0);
+            terRenderDevice->DrawRectangle(rectpos.x, rectpos.y, rectsize.x, rectsize.y, sColor4c(255, 255, 255, 255), 1);
+            terRenderDevice->OutText(rectpos.x + pad, rectpos.y + pad, text.c_str(), sColor4f(1, 1, 1, 1), -1);
+            terRenderDevice->SetFont(nullptr);
+            terRenderDevice->FlushPrimitive2D();
+        }
     }
 }
 

@@ -43,6 +43,7 @@ description_english=&00FF00My first mod!\n&FFFFFFThis is a example of how to wri
 description_russian=&00FF00Мой первый мод!\n&FFFFFFЭто пример написания цветного многострочного\nописания мода.
 description_spanish=&00FF00¡Mi primer mod!\n&FFFFFFEste es un ejemplo de cómo escribir una descripción de mod\nmultilínea coloreada.
 authors=First author name\nAnother author name\n3rd Author name
+license=GPLv3
 url=https://kdlab.com
 
 [Content]
@@ -97,7 +98,7 @@ Resource/Multiplayer/CoolMap.spg=Resource/Battle/CoolMap.spg
 Resource/Multiplayer/CoolMap.bin=Resource/Battle/CoolMap.bin
 ```
 
-## Extending AttributeLibrary
+## Scripts dir and extending AttributeLibrary
 
 While one can place `Scripts/AttributeLibrary` in mod to replace the existing attribute library, is better to extend it
 by creating `Scripts/AttributeLibraryExtra` which will be merged into already loaded attribute library replacing
@@ -105,6 +106,34 @@ any existing data. `Scripts/AttributeLibraryExtraCampaign` can also be used to s
 mission. This also applies to RigidBodyPrmLibrary.
 
 Is important to remember that mod loading order still apply here as ones loading last will set the final data.
+
+Therefore, the following files are valid for different uses in the mods:
+
+Replacing file:
+```
+Scripts\\GlobalAttributes
+Scripts\\RigidBodyPrmLibrary
+Scripts\\AttributeLibrary
+```
+
+Replacing file only during campaign:
+```
+Scripts\\GlobalAttributesCampaign
+Scripts\\RigidBodyPrmLibraryCampaign
+Scripts\\AttributeLibraryCampaign
+```
+
+Adding/replacing data to already loaded data:
+```
+Scripts\\RigidBodyPrmLibraryExtra
+Scripts\\AttributeLibraryExtra
+```
+
+Adding/replacing data to already loaded data only during campaign:
+```
+Scripts\\RigidBodyPrmLibraryExtraCampaign
+Scripts\\AttributeLibraryExtraCampaign
+```
 
 ## Custom normal maps
 

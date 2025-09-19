@@ -1,8 +1,11 @@
 #ifndef PERIMETER_GAMECONTENT_H
 #define PERIMETER_GAMECONTENT_H
 
+///The identified content at the root of game content, this only can be one thing 
 extern GAME_CONTENT terGameContentBase;
+///All available contents in this installation (base + addons)
 extern GAME_CONTENT terGameContentAvailable;
+///Current selected content, can be several or only one in available content (when user chooses one)
 extern GAME_CONTENT terGameContentSelect;
 
 /**
@@ -12,6 +15,8 @@ class ModMetadata {
 public:
     /// Path for this mod
     std::string path = {};
+    /// Errors when loading mod if any
+    std::vector<std::string> errors = {};
     /// Has campaign missions?
     //TODO use this on "Change Campaign"
     bool campaign = false;
@@ -40,6 +45,11 @@ public:
     /// Optional
     /// Example: AuthorA, AuthorB
     std::string mod_authors = {};
+
+    /// License for mod
+    /// Optional
+    /// Example: GPLv3
+    std::string mod_license = {};
 
     /// URL link for mod
     /// Optional

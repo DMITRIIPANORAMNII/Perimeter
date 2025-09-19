@@ -1,5 +1,4 @@
 #include "StdAfx.h"
-#include "NetPlayer.h"
 #include "Runtime.h"
 #include "GameShell.h"
 #include "CameraManager.h"
@@ -14,7 +13,11 @@ extern int terDrawMeshShadow;
 extern int terShadowType;
 extern int terMipMapLevel;
 extern int terShowTips;
+#ifdef GPX
+extern const int terResizableWindow;
+#else
 extern int terResizableWindow;
+#endif
 extern int applicationRunBackground;
 
 extern float terNearDistanceLOD;
@@ -25,9 +28,10 @@ extern int terMipMapBlur;
 int terMapReflection = 0;
 int terObjectReflection = 0;
 
-int terSoundEnable = 1;
-int terMusicEnable = 1;
+int terAudioEnable = 1;
 float terSoundVolume = 1;
+float terSpeechVolume = 1;
+float terVoiceVolume = 1;
 float terMusicVolume = 1;
 
 
@@ -39,7 +43,10 @@ void PerimeterDataChannelLoad()
 	IniManager ini_no_check("Perimeter.ini", false);
 
 	//GraphicsSection
+#ifndef GPX
 	terFullScreen = ini.getInt("Graphics","FullScreen");
+    check_command_line_parameter("FullScreen", terFullScreen);
+#endif
     terScreenIndex = -1;
     ini_no_check.getInt("Graphics", "ScreenIndex", terScreenIndex);
     terScreenRefresh = ini_no_check.getInt("Graphics", "ScreenRefresh");
@@ -51,15 +58,16 @@ void PerimeterDataChannelLoad()
     }
 	if (0 < ScreenSizeX) terScreenSizeX = ScreenSizeX;
 	if (0 < ScreenSizeY) terScreenSizeY = ScreenSizeY;
+#ifndef GPX
     ini_no_check.getInt("Graphics","ResizableWindow", terResizableWindow);
-    check_command_line_parameter("resizablewindow", terResizableWindow);
+    check_command_line_parameter("ResizableWindow", terResizableWindow);
+#endif
 	terBitPerPixel = ini.getInt("Graphics","BPP");
 	terMapLevelLOD = ini.getInt("Graphics","MapLevelLOD");
 
 	terDrawMeshShadow = ini.getInt("Graphics","DrawMeshShadow");
 	terShadowType = ini.getInt("Graphics","ShadowType");
 	terEnableBumpChaos = ini.getInt("Graphics","EnableBumpChaos");
-	gb_VisGeneric->SetFavoriteLoadDDS(ini.getInt("Graphics","FavoriteLoadDDS"));
 
 	terNearDistanceLOD = ini.getInt("Graphics","NearDistanceLOD");
 	terFarDistanceLOD = ini.getInt("Graphics","FarDistanceLOD");
@@ -73,6 +81,8 @@ void PerimeterDataChannelLoad()
 	terShowTips = ini.getInt("Game","ShowTips");
     ini_no_check.getInt("Graphics","GrabInput", terGrabInput);
     check_command_line_parameter("GrabInput", terGrabInput);
+    ini_no_check.getInt("Graphics","VSync", terVSyncEnable);
+    check_command_line_parameter("VSync", terVSyncEnable);
     ini_no_check.getInt("Game","RunBackground", applicationRunBackground);
     check_command_line_parameter("RunBackground", applicationRunBackground);
 

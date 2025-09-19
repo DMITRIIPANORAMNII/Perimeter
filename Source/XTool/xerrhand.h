@@ -32,8 +32,8 @@ struct XErrorHandler
 {
 	unsigned state;
 
-	const char* prefix;
-
+	std::string prefix;
+    std::string locale;
     std::string log_path;
 
 	void (*restore_func)();
@@ -47,11 +47,12 @@ struct XErrorHandler
 	void	 SetRestore(void (*rf)());
     void	 SetCrash(void (*cf)());
 	void	 SetState(int s){state=s;}
-	void	 Abort(const char* message, int code = XERR_USER, int addval = -1, const char* subj = NULL);
-    void	 Abort(const std::string& message, int code = XERR_USER, int addval = -1, const char* subj = NULL);
+    void     SetLocale(std::string locale_) { locale = std::move(locale_); };
+    [[noreturn]] void	 Abort(const char* message, int code = XERR_USER, int addval = -1, const char* subj = NULL);
+    [[noreturn]] void	 Abort(const std::string& message, int code = XERR_USER, int addval = -1, const char* subj = NULL);
     bool     ShowErrorMessage(const char* message);
-	void	 Exit();
-	void	 RTC(const char *file,unsigned int line, const char *expr);
+    [[noreturn]] void	 Exit();
+    [[noreturn]] void	 RTC(const char *file,unsigned int line, const char *expr);
 };
 
 std::string decodeStackAddress(const void* addr);
@@ -81,9 +82,9 @@ void SetAssertRestoreGraphicsFunction(void(*func)());
 
 #else  //  ...
 
-#define SetAssertRestoreGraphicsFunction(func)
-#define xxassert(exp, msg) 
-#define xassert(exp) 
+#define SetAssertRestoreGraphicsFunction(func) {}
+#define xxassert(exp, msg) {}
+#define xassert(exp) {}
 
 #endif  //  ...
 

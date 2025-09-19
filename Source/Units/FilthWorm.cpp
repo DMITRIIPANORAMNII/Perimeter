@@ -42,14 +42,14 @@ terUnitAttributeID terFilthSwarmWorm::GetUnitID()
 {
 	switch(SpotPoint->GetFilthParamID())
 	{
+    default:
+        xassert(0);
+        [[fallthrough]];
 	case FILTH_SPOT_ID_WORM:
 		return UNIT_ATTRIBUTE_FILTH_WORM;
 	case FILTH_SPOT_ID_A_WORM:
 		return UNIT_ATTRIBUTE_FILTH_A_WORM;
 	}
-
-	xassert(0);
-	return UNIT_ATTRIBUTE_FILTH_WORM;
 }
 
 void terFilthSwarmWorm::SetFreeDestroy()
@@ -222,10 +222,10 @@ void terFilthWorm::Start()
 {
 	terFilthGeneric::Start();
 
-	bool b=sound.Init("Filth_Move_Worm");
+	sound.Init("Filth_Move_Worm");
 	sound.SetPos(To3D(position()));
 
-	b=attack_sound.Init("Filth_Attack_Worm");
+	attack_sound.Init("Filth_Attack_Worm");
 	attack_sound.SetPos(To3D(position()));
 
 	setAttack(false);

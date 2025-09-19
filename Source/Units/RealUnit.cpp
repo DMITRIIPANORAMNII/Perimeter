@@ -399,9 +399,9 @@ void terUnitReal::Quant()
 	if(HotCount > 0){
 		HotCount--;
 		HotFactor = 1.0f;
-	}
-	else
-		average(HotFactor,0, 0.3f);
+	} else {
+        average(HotFactor, 0, 0.3f);
+    }
 
 	if(weapon_)
 		weapon_->quant();
@@ -847,7 +847,7 @@ void terUnitReal::ShowInfo()
 	if(selected()){
 		if(attr()->showPath && !BodyPoint->way_points.empty()){
 			Vect3f posPrev = interpolatedPosition();
-			Vect3fList::const_iterator i;
+			std::vector<Vect3f>::const_iterator i;
 			FOR_EACH(BodyPoint->way_points, i){
 				terRenderDevice->DrawLine(posPrev, *i, pathColor);
 				posPrev = *i;
@@ -889,6 +889,14 @@ void terUnitReal::ShowInfo()
 	}
 }
 
+class terInterpolationReal* terUnitReal::realAvatar() {
+    return safe_cast<terInterpolationReal*>(avatar());
+}
+
+const class terInterpolationReal* terUnitReal::realAvatar() const {
+    return safe_cast<terInterpolationReal*>(avatar());
+}
+
 void terUnitReal::AvatarInterpolation()
 {
 	terUnitGeneric::AvatarInterpolation();
@@ -925,8 +933,13 @@ bool terUnitReal::fireRequest(const Vect3f* targetPosition, terUnitBase* targetU
 				buf < "G ";
 			if(fire_status & LEGION_FIRE_STATUS_FRIENDLY_FIRE)
 				buf < "ff ";
-			if(fire_status & LEGION_FIRE_STATUS_RELOAD_AMMO)
-				buf < "R ";
+			if(fire_status & LEGION_FIRE_STATUS_RELOAD_AMMO) {
+                if (weapon_->isLoaded()) {
+                    buf < "Rl ";
+                } else {
+                    buf < "R ";
+                }
+            }
 			if(fire_status & LEGION_FIRE_STATUS_DISTANCE)
 				buf < "D ";
 			if(fire_status & LEGION_FIRE_STATUS_FIELD_OBSTACLE)
@@ -1215,8 +1228,9 @@ void terUnitReal::freeZeroLayer()
 void terUnitReal::handleLaserHit()
 {
 	terEffectControllerList::iterator it = find(effectControllers_.begin(),effectControllers_.end(),EFFECT_ID_LASER_HIT);
-	if(it != effectControllers_.end())
-		it->createEffect(this);
+	if (it != effectControllers_.end()) {
+        it->createEffect(this);
+    }
 }
 
 void terUnitReal::fireStop()

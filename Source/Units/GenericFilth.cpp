@@ -396,6 +396,8 @@ void terFilthSpot::SoundActivate()
 	float z = (float)(vMap.GetAlt(vMap.XCYCL(xm::round(position().x)), vMap.YCYCL(xm::round(position().y))) >> VX_FRACTION);
     Vect3f v;
 	switch(FilthParamID){
+        default:
+            break;
 		case FILTH_SPOT_ID_ANTS:
 		case FILTH_SPOT_ID_A_ANTS:
             v = Vect3f(position().x,position().y,z);
@@ -642,12 +644,9 @@ void terFilthSpot::MoveQuant()
 {
 	terUnitBase::MoveQuant();
 
-#ifndef _FINAL_VERSION_
-	if(check_command_line("noFilth") || gameShell->missionEditor())
-	{
-		return;
-	}
-#endif
+    if (gameShell && gameShell->missionEditor()) {
+        return;
+    }
 
 	FilthSwarmListType::iterator i_swarm;
 	FOR_EACH(swarm_list,i_swarm){
@@ -769,12 +768,12 @@ void terFilthSpot::ShowInfo()
         const std::string& locale = getLocale();
         if (startsWith(locale, "russian")) {
             text = convertToCodepage("Скверна: ", locale);
-            text += convertToCodepage(getEnumDescriptor(FILTH_SPOT_ID_NONE).nameAlt(FilthParamID), locale);
+            text += convertToCodepage(getEnumDescriptor(FILTH_SPOT_ID_NONE)->nameAlt(FilthParamID), locale);
             text += "\n";
         } else {
             text = "Scourge:\n";
         }
-        text += getEnumDescriptor(FILTH_SPOT_ID_NONE).name(FilthParamID);
+        text += getEnumDescriptor(FILTH_SPOT_ID_NONE)->name(FilthParamID);
         Vect3f e,w;
 		terCamera->GetCamera()->ConvertorWorldToViewPort(&position(),&w,&e);
 		terRenderDevice->SetFont(gameShell->debugFont());
@@ -1021,7 +1020,10 @@ void terFilthSwarm::FindComplexTarget(std::list<terUnitBase*>& target_list,int m
 
 	for(int iteration=0;iteration<2;iteration++)
 	{
-		uint32_t ignore_unit_class= (iteration == 0) ? UNIT_CLASS_FRAME : ~(uint32_t)UNIT_CLASS_FRAME;
+		uint32_t ignore_unit_class = UNIT_CLASS_FRAME;
+        if (0 < iteration) {
+            ignore_unit_class = ~ignore_unit_class;
+        }
 		FOR_EACH(universe()->Players, pi)
 		{
 			terPlayer* player=*pi;

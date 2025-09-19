@@ -1,7 +1,5 @@
 #include "StdAfx.h"
 
-#include "MissionEdit.h"
-
 #include "Config.h"
 #include "Runtime.h"
 #include "terra.h"
@@ -18,6 +16,8 @@
 #include "qd_textdb.h"
 #include "codepages/codepages.h"
 #include "../HT/ht.h"
+
+#include "MissionEdit.h"
 
 //------------------------------------------------
 MissionEditor::MissionEditor()
@@ -101,7 +101,6 @@ bool MissionEditor::keyPressed(const sKey& Key)
 	case 'Q':
 		setPlayer(0);
 		return true;
-	case VK_TILDE:
 	case 'W':
 		setPlayer(-1);
 		return true;
@@ -166,6 +165,10 @@ bool MissionEditor::keyPressed(const sKey& Key)
 			terMapPoint->UpdateMap(Vect2i::ZERO, Vect2i((int)vMap.H_SIZE, (int)vMap.V_SIZE));
 		}
 		return true; 
+        
+    case 'M' | KBD_CTRL:
+        gameShell->rememberPlayerCamera(universe()->activePlayer(), "Camera");
+        break;
 
 	case VK_RETURN: 
 	case VK_RETURN | KBD_SHIFT: 
@@ -265,7 +268,7 @@ bool MissionEditor::mouseRightPressed(const Vect2f& pos)
 	return false;
 }
 
-terFilthSpotID SelectFilth()
+terFilthSpotID MissionEditor::SelectFilth()
 {
 	struct 
 	{
@@ -306,7 +309,7 @@ terFilthSpotID SelectFilth()
         if (russian) {
             filth.push_back(name[i].name);
         } else {
-            filth.push_back(getEnumDescriptor(FILTH_SPOT_ID_NONE).name(name[i].id));
+            filth.push_back(getEnumDescriptor(FILTH_SPOT_ID_NONE)->name(name[i].id));
         }
     }
 
@@ -319,7 +322,7 @@ terFilthSpotID SelectFilth()
 	return FILTH_SPOT_ID_NONE;
 }
 
-terUnitAttributeID SelectGeo()
+terUnitAttributeID MissionEditor::SelectGeo()
 {
 	struct 
 	{
@@ -340,7 +343,7 @@ terUnitAttributeID SelectGeo()
         if (russian) {
             filth.push_back(name[i].name);
         } else {
-            filth.push_back(getEnumDescriptor(UNIT_ATTRIBUTE_NONE).name(name[i].id));
+            filth.push_back(getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->name(name[i].id));
         }
     }
 
@@ -384,9 +387,9 @@ void MissionEditor::createUnit()
 		const char* itemSel = popupMenu(items);
 		if(itemSel) {
             if (russian) {
-                attributeID = static_cast<terUnitAttributeID>(getEnumDescriptor(UNIT_ATTRIBUTE_NONE).keyByNameAlt(itemSel));
+                attributeID = static_cast<terUnitAttributeID>(getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->keyByNameAlt(itemSel));
             } else {
-                attributeID = static_cast<terUnitAttributeID>(getEnumDescriptor(UNIT_ATTRIBUTE_NONE).keyByName(itemSel));
+                attributeID = static_cast<terUnitAttributeID>(getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->keyByName(itemSel));
             }
         }
 	}
@@ -539,7 +542,7 @@ const char* MissionEditor::info()
         } else {
             info_ += "Copied: ";
         }
-        info_ += convertToCodepage(getEnumDescriptor(UNIT_ATTRIBUTE_NONE).nameAlt(copiedData_->attributeID), locale);
+        info_ += convertToCodepage(getEnumDescriptor(UNIT_ATTRIBUTE_NONE)->nameAlt(copiedData_->attributeID), locale);
         info_ += "\n";
     }
 

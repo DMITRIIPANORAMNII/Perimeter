@@ -79,7 +79,7 @@ void AITileMap::InitialUpdate()
 	path_finder->Set(terrainPathFind.enableSmoothing);
 
 	memcpy(path_finder2->GetWalkMap(),path_finder->GetWalkMap(),sizeX()*sizeY()*sizeof(path_finder2->GetWalkMap()[0]));
-	path_finder2->SetLater(terrainPathFind.enableSmoothing, terrainPathFind.rebuildQuants);
+	path_finder2->SetLater(&terrainPathFind);
 
 	updateHardMap();
 }
@@ -230,7 +230,7 @@ bool AITileMap::findPath(const Vect2i& from_w, const Vect2i& to_w, std::vector<V
 	if(!inside(from) || !inside(to))
 		return false;
 
-	bool b;
+	bool b = false;
 	//Since both clusterheuristic types are not same type, is better to use if's than switch
 	if (type == PATH_NORMAL) {
         ClusterHeuristic ch = ClusterHeuristicDitch();
@@ -295,7 +295,7 @@ void AITileMap::rebuildWalkMap(uint8_t* walk_map)
 	//Добавить кластер
 	if(0 && field_dispatcher)
 	{
-		xassert(FieldDispatcher::scale == tileSizeShl);
+		xassert(static_cast<size_t>(FieldDispatcher::scale) == tileSizeShl);
 
 		int map_dx = sizeX(),
 			map_dy = sizeY();
@@ -363,7 +363,7 @@ void AITileMap::recalcPathFind()
 		std::swap(path_finder2,path_finder);
 
 		rebuildWalkMap(path_finder2->GetWalkMap());
-		path_finder2->SetLater(terrainPathFind.enableSmoothing,terrainPathFind.rebuildQuants);
+		path_finder2->SetLater(&terrainPathFind);
 	}
 }
 

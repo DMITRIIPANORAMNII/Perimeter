@@ -6,11 +6,13 @@
 #include "qd_textdb.h"
 #include "tx3d.hpp"
 #include "Localization.h"
+#include "Sample.h"
+#include "AudioPlayer.h"
 
 extern GameShell* gameShell;
 extern cInterfaceRenderDevice* terRenderDevice;
 extern cVisGeneric* terVisGeneric;
-extern int terSoundEnable;
+extern int terAudioEnable;
 extern float terSoundVolume;
 extern float GlobalParticleRate;
 
@@ -42,6 +44,7 @@ HistoryScene::HistoryScene() {
 
 	lastEvent = Controller::CONTROL_SUBMIT_EVENT;
 
+    voice = new SpeechPlayer();
 	interpreter = new Interpreter(this);
 	historyCamera = new HistorySceneCamera(interpreter);
 
@@ -52,8 +55,9 @@ HistoryScene::HistoryScene() {
 
 HistoryScene::~HistoryScene() {
 	done();
-	delete historyCamera;
-	delete interpreter;
+    delete historyCamera;
+    delete interpreter;
+    delete voice;
 }
 
 void HistoryScene::loadProgram(const string& fileName) {
@@ -109,7 +113,7 @@ void HistoryScene::init(cVisGeneric* visGeneric, bool bw, bool addBlendAlphaMode
     Vect2f center(0.5f,0.5f);
     sRectangle4f clip(-0.5f, -0.5f, 0.5f, 0.5f);
     Vect2f focus(1.0f, 1.0f);
-    Vect2f zplane(10.0f,100000.0f);
+    Vect2f zplane(10.0f,1e6f);
     cameraSky->SetFrustum(
             &center,									// центр камеры
             &clip,										// видимая область камеры
@@ -218,7 +222,7 @@ void HistoryScene::done() {
 }
 
 void HistoryScene::quant(const Vect2f& mousePos, float dt) {
-	if (!voice.IsPlay() && playingVoice) {
+	if (!voice->IsPlay() && playingVoice) {
 		playingVoice = false;
 		audioStopped();
 		interpreter->eventOccured(Controller::END_OF_AUDIO_EVENT);
@@ -434,11 +438,8 @@ void HistoryScene::drawPopup() {
 	Vect2f mousePos = historyCamera->getMousePos();
 	World* w = traceWorld(mousePos);
 
-	sPoint pt = {xm::round((mousePos.x + 0.5f) * terRenderDevice->GetSizeX()),
+    Vect2i pt = {xm::round((mousePos.x + 0.5f) * terRenderDevice->GetSizeX()),
                  xm::round((mousePos.y + 0.5f) * terRenderDevice->GetSizeY()) };
-
-	//TODO is this needed to port?
-	//ClientToScreen(hWndVisGeneric, &pt);
 
 	if (w) {
 		std::string frameNames;
@@ -540,24 +541,18 @@ void HistoryScene::postDraw() {
 	scene->PostDraw(historyCamera->getCamera());
 }
 
-void HistoryScene::setupAudio() {
-	if (!terSoundEnable) {
-		stopAudio();
-	}
-	voice.SetVolume(terSoundVolume);
-}
-
 void HistoryScene::startAudio(const string& name) {
 	if (!name.empty()) {
 		stopAudio();
 		interpreter->eventOccured(Controller::END_OF_AUDIO_EVENT);
-		if (terSoundEnable) {
+		if (0 < terSpeechVolume) {
 			playingVoice = true;
-			int ret = voice.OpenToPlay((getLocDataPath() + name).c_str(), 0);
+            voice->SetVolume(terSpeechVolume);
+			int ret = voice->OpenToPlay((getLocDataPath() + name).c_str(), 0);
 			if (!ret) {
                 fprintf(stderr, "startAudio %s error\n", name.c_str());
             }
-			voice.SetVolume(terSoundVolume);
+            resetAudioPosition();
 		}
 	}
 
@@ -586,6 +581,8 @@ void HistoryScene::addCameraPosition(
 
 void HistoryScene::waitFor(Controller::WaitEventType event) {
 	switch (event) {
+        default:
+            break;
 		case Controller::BEGIN_OF_CAMERA_EVENT:
 		case Controller::END_OF_CAMERA_EVENT:
 			lastEvent = event;
@@ -602,6 +599,8 @@ void HistoryScene::clearCameraPath() {
 	} else {
 		if (!interpreter->isNormalSpeedMode()) {
 			switch (lastEvent) {
+                default:
+                    break;
 				case Controller::BEGIN_OF_CAMERA_EVENT:
 					historyCamera->setPositionToBegin();
 					break;
@@ -798,10 +797,36 @@ void HistoryScene::setNormalSpeedMode(bool normal) {
 	}
 	getController()->setNormalSpeedMode(normal);
 }
+
 void HistoryScene::playMusic() {
     if (musicNamePath.empty()) {
         gb_Music.Stop();
     } else {
         PlayMusic(("RESOURCE\\MUSIC\\" + musicNamePath).c_str());
     }
+}
+
+void HistoryScene::stopAudio() {
+    interpreter->eventOccured(Controller::END_OF_AUDIO_EVENT);
+    voice->Stop();
+    resetAudioPosition();
+}
+
+bool HistoryScene::isAudioPlaying() {
+    return voice->IsPlay();
+}
+
+void HistoryScene::resetAudioPosition() {
+    if (voice->IsPlay()) {
+        started_at = clock_us();
+    } else {
+        started_at = 0;
+    }
+}
+
+float HistoryScene::getAudioPosition() {
+    if (started_at == 0 || !voice->IsPlay()) return 0.0f;
+    float pos = static_cast<float>(static_cast<double>(clock_us() - started_at) / 1000000.0);
+    pos /= voice->GetLen();
+    return pos;
 }

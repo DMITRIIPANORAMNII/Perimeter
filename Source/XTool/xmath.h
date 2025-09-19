@@ -9,6 +9,7 @@
 #ifndef __XMATH_H__
 #define __XMATH_H__
 
+#include "SerializationMacro.h"
 #include "tweaks.h"
 
 //#define _XMATH_USE_IOSTREAM
@@ -164,11 +165,13 @@ xm_inline float SIGNF(float a, float b) { return b >= 0.0f ? xm::abs(a) : -xm::a
 class RandomGenerator 
 {
 	enum { max_value = 0x7fff };
-	int value;
+	int value = 1;
+    bool logic = false;
 public:
-	RandomGenerator(int val = 1) { set(val); }
+	explicit RandomGenerator(int val = 1, bool logic_ = false): logic(logic_) { set(val); }
 	void set(int val) { value = val; }
-	int get() const { return value; }
+    int get() const { return value; }
+    bool isLogic() const { return logic; }
 	int operator()(); // Generates random value [0..max_value), non-inline due to some bugs with optimization
 	xm_inline int operator()(int m) { return m ? (*this)() % m : 0; } // May by used in random_shuffle
 	xm_inline int operator()(int min, int max) { return min + (*this)() % (max - min); }
@@ -179,12 +182,8 @@ public:
 };
 
 #undef random
-extern RandomGenerator xm_random_generator;
-xm_inline unsigned xm_random(unsigned m){ return xm_random_generator(m); }
-xm_inline float frnd(float x){ return xm_random_generator.frnd(x); }
-xm_inline float fabsRnd(float x){ return xm_random_generator.fabsRnd(x); }
-xm_inline float xm_frand(){ return xm_random_generator.frand(); }
-
+#undef srandom
+#undef rand
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -254,9 +253,9 @@ xm_inline T clamp(const T& x, const T1& xmin, const T2& xmax) { if(x < xmin) ret
 class Vect2f
 {
 public:	
-	float x,y;
+	float x = 0.0f, y = 0.0f;
 
-	xm_inline Vect2f()								{ }
+	xm_inline Vect2f() = default;
 	xm_inline Vect2f(float x_,float y_)					{ x = x_; y = y_; }
 	
 	typedef float float2[2];
@@ -323,8 +322,7 @@ public:
 	friend XBuffer& operator< (XBuffer& b,const Vect2f& v);
 	friend XBuffer& operator> (XBuffer& b,Vect2f& v);
 
-    template<class Archive>
-    void serialize(Archive& ar);
+    SERIALIZE_REF(ar);
 
 	static const Vect2f ZERO;
 	static const Vect2f ID;
@@ -340,9 +338,9 @@ public:
 class Vect2i
 {
 public:
-	int x,y;
+	int x = 0, y = 0;
 
-	xm_inline Vect2i()								{ }
+    xm_inline Vect2i() = default;
 	xm_inline Vect2i(int x_, int y_)						{ x = x_; y = y_; }
 	xm_inline Vect2i(float x_, float y_)					{ x = xm::round(x_); y = xm::round(y_); }
 	
@@ -405,8 +403,7 @@ public:
 	friend XBuffer& operator< (XBuffer& b,const Vect2i& v);
 	friend XBuffer& operator> (XBuffer& b,Vect2i& v);
 
-    template<class Archive>
-    void serialize(Archive& ar);
+    SERIALIZE_REF(ar);
 
 	static const Vect2i ZERO;
 	static const Vect2i ID;
@@ -422,9 +419,9 @@ public:
 class Vect2s
 {
 public:
-	short x,y;
+	short x = 0, y = 0;
 
-	xm_inline Vect2s()										{ }
+	xm_inline Vect2s() = default;
 	xm_inline Vect2s(int x_,int y_)							{ x = x_; y = y_; }
 
 	xm_inline Vect2s(const Vect2f& v)			{ x = xm::round(v.x); y = xm::round(v.y); }
@@ -473,8 +470,7 @@ public:
 	friend XBuffer& operator< (XBuffer& b,const Vect2s& v);
 	friend XBuffer& operator> (XBuffer& b,Vect2s& v);
 
-    template<class Archive>
-	void serialize(Archive& ar);
+    SERIALIZE_REF(ar);
 };
 
 
@@ -486,10 +482,10 @@ public:
 
 class Mat2f
 {
-  float xx, xy,
-       yx, yy;
+  float xx = 0.0f, xy = 0.0f,
+        yx = 0.0f, yy = 0.0f;
 public:
-	Mat2f(){}
+	Mat2f() = default;
 	explicit Mat2f(float angle) { set(angle); }
 	Mat2f(float xx_, float xy_, float yx_, float yy_) { xx = xx_; xy = xy_; yx = yx_; yy = yy_; }
 	void set(float angle){ xx = yy = xm::cos(angle); yx = xm::sin(angle); xy = -yx; }
@@ -535,7 +531,7 @@ public:
 	Mat2f rot;
 	Vect2f trans;
 
-	MatX2f(){}
+	MatX2f() = default;
 	MatX2f(const Mat2f& r, const Vect2f& t) : rot(r), trans(t) {}
 	void set(const Mat2f& r, const Vect2f& t) { rot = r; trans = t; }
 
@@ -567,11 +563,7 @@ class Vect3f
 
 public:
   typedef float float3[3];
-
-  union {
-	struct { float x, y, z; };
-	struct { float3 array;  };
-  };
+  float x = 0.0f, y = 0.0f, z = 0.0f;
 
   // constructors //////////////////////////////////////////////////////////////
 
@@ -581,15 +573,15 @@ public:
 
   xm_inline Vect3f(const float3& v) {x = v[0]; y = v[1]; z = v[2];}
 
-  xm_inline operator const float3& () const { return array; }
-  xm_inline operator float3& () { return array; }
-
   xm_inline operator Vect3d () const;
 
   // setters / accessors / translators /////////////////////////////////////////
 
   xm_inline Vect3f& set(float x_, float y_, float z_) { x = x_; y = y_; z = z_; return *this; }
   xm_inline Vect3f& set(const float3& v) {x = v[0]; y = v[1]; z = v[2]; return *this; }
+  xm_inline Vect3f& set(const Vect3f& v) {x = v.x; y = v.y; z = v.z; return *this; }
+  
+  xm_inline const Vect3f& write(float3& v) const { v[0] = x; v[1] = y; v[2] = z; return *this; }
 
   xm_inline Vect3f& setSpherical(float psi,float theta,float radius);
 
@@ -706,8 +698,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const Vect3f& v);
   friend XBuffer& operator> (XBuffer& b,Vect3f& v);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   //  Swap  /////////////////////////
   xm_inline void swap(Vect3f& other);
@@ -738,11 +729,11 @@ class Vect3d
 
 public:
 
-  double x, y, z;
+  double x = 0.0, y = 0.0, z = 0.0;
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline Vect3d() {}
+  xm_inline Vect3d() = default;
   xm_inline Vect3d(double x_, double y_, double z_) { x = x_; y = y_; z = z_; }
   
   typedef float double3[3];
@@ -868,8 +859,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const Vect3d& v);
   friend XBuffer& operator> (XBuffer& b,Vect3d& v);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   //  Swap  /////////////////////////
   xm_inline void swap(Vect3d& other);
@@ -906,15 +896,15 @@ class Mat3f
 public:
 
   // (stored in row-major order)
-  float xx, xy, xz,
-       yx, yy, yz,
-       zx, zy, zz;
+  float xx = 0.0f, xy = 0.0f, xz = 0.0f,
+        yx = 0.0f, yy = 0.0f, yz = 0.0f,
+        zx = 0.0f, zy = 0.0f, zz = 0.0f;
 
 public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  Mat3f() {}
+  Mat3f() = default;
   
   xm_inline Mat3f(float xx,float xy,float xz,
 		float yx,float yy,float yz,
@@ -1104,8 +1094,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const Mat3f& M);
   friend XBuffer& operator> (XBuffer& b,Mat3f& M);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // Mat3f constants ////////////////////////////////////////////////////////////
 
@@ -1130,15 +1119,15 @@ class Mat3d
 private:
 
   // (stored in row-major order)
-  double xx, xy, xz,
-       yx, yy, yz,
-       zx, zy, zz;
+  double xx = 0.0, xy = 0.0, xz = 0.0f,
+         yx = 0.0, yy = 0.0, yz = 0.0f,
+         zx = 0.0, zy = 0.0, zz = 0.0f;
 
 public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  Mat3d() {}
+  Mat3d() = default;
   
   xm_inline Mat3d(double xx,double xy,double xz,
 		double yx,double yy,double yz,
@@ -1325,8 +1314,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const Mat3d& M);
   friend XBuffer& operator> (XBuffer& b,Mat3d& M);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
  
   // Mat3d constants ////////////////////////////////////////////////////////////
 
@@ -1353,7 +1341,7 @@ public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline MatXf()				{}
+  xm_inline MatXf() = default;
   xm_inline MatXf(const Mat3f& R_, const Vect3f& d_) {set(R_, d_);}
   xm_inline MatXf(const Se3f& T)			{set(T);}
 
@@ -1417,7 +1405,7 @@ public:
   xm_inline Vect3f& xformPoint(const Vect3f& p, Vect3f& xp) const;// this*(p 1)=>xp  [!]
   xm_inline Vect3f& xformPoint(Vect3f& p) const;		  // this*(p 1)=>p
 
-  xm_inline Vect3f operator*(const Vect3f& p) const { Vect3f xp; xformPoint(p, xp); return xp; }
+  xm_inline Vect3f operator*(const Vect3f& p) const { Vect3f xp = {}; xformPoint(p, xp); return xp; }
 
   // These are exactly like the above methods, except the inverse
   // transform this^-1 is used.
@@ -1434,8 +1422,7 @@ public:
   friend istream& operator>>(istream& is, MatXf& M);
 #endif
   
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // MatXf constants ////////////////////////////////////////////////////////////
 
@@ -1461,7 +1448,7 @@ public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline MatXd()				{}
+  xm_inline MatXd() = default;
   xm_inline MatXd(const Mat3d& R_, const Vect3d& d_) {set(R_, d_);}
   xm_inline MatXd(const Se3d& T)			{set(T);}
   
@@ -1541,8 +1528,7 @@ public:
   friend istream& operator>>(istream& is, MatXd& M);
 #endif
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // MatXd constants ////////////////////////////////////////////////////////////
 
@@ -1564,14 +1550,14 @@ class QuatF
 
 public:
 
-  float s_, x_, y_, z_;
+  float s_ = 0.0f, x_ = 0.0f, y_ = 0.0f, z_ = 0.0f;
 
 
 public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline QuatF() {}
+  xm_inline QuatF() = default;
 
   xm_inline QuatF(float s, float x, float y, float z) {set(s, x, y, z);}
 
@@ -1685,8 +1671,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const QuatF& q);
   friend XBuffer& operator> (XBuffer& b,QuatF& q);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // miscellaneous /////////////////////////////////////////////////////////////
   xm_inline void slerp(const QuatF &a,const QuatF &b,float t);
@@ -1711,14 +1696,14 @@ class QuatD
 
 private:
 
-  double s_, x_, y_, z_;
+  double s_  = 0.0, x_  = 0.0, y_  = 0.0, z_  = 0.0;
 
 
 public:
 
   // constructors //////////////////////////////////////////////////////////////
 
-  QuatD() {}
+  QuatD() = default;
 
   QuatD(double s, double x, double y, double z) {set(s, x, y, z);}
 
@@ -1833,8 +1818,7 @@ public:
   friend XBuffer& operator< (XBuffer& b,const QuatD& q);
   friend XBuffer& operator> (XBuffer& b,QuatD& q);
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // miscellaneous /////////////////////////////////////////////////////////////
   xm_inline void slerp(const QuatD &a,const QuatD &b, double t);
@@ -1864,7 +1848,7 @@ public:
   // constructors //////////////////////////////////////////////////////////////
 
 
-  Se3f() {}
+  Se3f() = default;
   Se3f(const QuatF& q_, const Vect3f& d_) { set(q_, d_); }
   explicit Se3f(const MatXf& X) { set(X); }
   
@@ -1931,8 +1915,7 @@ public:
   friend XBuffer& operator> (XBuffer& b,Se3f& v);
 */
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // Se3f constants /////////////////////////////////////////////////////////////
 
@@ -1958,7 +1941,7 @@ public:
   // constructors //////////////////////////////////////////////////////////////
 
 
-  Se3d() {}
+  Se3d() = default;
   Se3d(const QuatD& q_, const Vect3d& d_) { set(q_, d_); }
   Se3d(const MatXd& X) { set(X); }
 
@@ -2025,8 +2008,7 @@ public:
   friend XBuffer& operator> (XBuffer& b,Se3d& v);
 */
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   // Se3d constants /////////////////////////////////////////////////////////////
 
@@ -2046,11 +2028,11 @@ class Vect4f
 
 public:
 
-  float x, y, z, w;
+  float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline Vect4f() {}
+  xm_inline Vect4f() = default;
   xm_inline Vect4f(float x_, float y_, float z_, float w_ = 1.0f) { x = x_; y = y_; z = z_; w = w_; }
 
   xm_inline operator Vect3f () const { return Vect3f(x, y, z); }
@@ -2125,8 +2107,7 @@ public:
   friend XBuffer& operator> (XBuffer& b,Vect4f& v);
 */
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
 
   //  Swap  /////////////////////////
   xm_inline void swap(Vect4f& other);
@@ -2151,21 +2132,15 @@ class Mat4f
 {
 
 public:
-
-  union {
-      struct {
-          // (stored in row-major order)
-          float xx, xy, xz, xw,
-                yx, yy, yz, yw,
-                zx, zy, zz, zw,
-                wx, wy, wz, ww;
-      };
-      struct { float array[16];  };
-  };
+  // (stored in row-major order)
+  float xx = 0.0f, xy = 0.0f, xz = 0.0f, xw = 0.0f,
+        yx = 0.0f, yy = 0.0f, yz = 0.0f, yw = 0.0f,
+        zx = 0.0f, zy = 0.0f, zz = 0.0f, zw = 0.0f,
+        wx = 0.0f, wy = 0.0f, wz = 0.0f, ww = 0.0f;
 
   // constructors //////////////////////////////////////////////////////////////
 
-  xm_inline Mat4f() {}
+  xm_inline Mat4f() = default;
   
   xm_inline Mat4f(const float* f);
   
@@ -2287,8 +2262,7 @@ public:
   friend XBuffer& operator> (XBuffer& b,Mat4f& M);
 */
 
-  template<class Archive>
-  void serialize(Archive& ar);
+  SERIALIZE_REF(ar);
   
   // Mat4f constants ////////////////////////////////////////////////////////////
 

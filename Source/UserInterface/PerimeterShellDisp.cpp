@@ -15,6 +15,8 @@
 #include "GameShell.h"
 #include "CameraManager.h"
 
+#include "Sample.h"
+#include "AudioPlayer.h"
 #include "PerimeterShellUI.h"
 #include "MissionEdit.h"
 #include "HotKey.h"
@@ -23,7 +25,7 @@
 #include "GenericFilth.h"
 #include "IronPort.h"
 #include "qd_textdb.h"
-#include <stdarg.h>     // for va_start
+#include <cstdarg>     // for va_start
 #include "GameContent.h"
 #include "Localization.h"
 #include "MainMenu.h"
@@ -31,6 +33,7 @@
 #include "BelligerentSelect.h"
 
 #include "ANIFile.h"
+#include "files/files.h"
 
 namespace scripts_export {
 #include "Scripts/InterfaceScriptExport.hi"
@@ -48,7 +51,6 @@ extern MusicPlayer gb_Music;
 
 extern bool  bNoUnitAction;
 extern bool  bNoTracking;
-extern int _nActiveClusterNum;
 
 extern cFont* hFontMainmenu1;
 extern cFont* hFontMainmenu2;
@@ -116,6 +118,22 @@ _handlertbl[] = {
     {SQSH_MM_ADDONS_BTN, onMMAddonsButton},
     {SQSH_MM_BACK_FROM_COMMUNITY_BTN, onMMBackButton},
 
+    //main menu control editor
+    {SQSH_MM_CONTROL_EDITOR_BTN, onMMControlEditorButton},
+    {SQSH_MM_CONTROL_EDITOR_LIST, onMMControlEditorList},
+    {SQSH_MM_CONTROL_EDITOR_CHANGE_BTN, onMMControlEditorChange},
+    {SQSH_MM_CONTROL_EDITOR_RESTORE_BTN, onMMControlEditorRestore},
+    {SQSH_MM_CONTROL_EDITOR_DELETE_BTN, onMMControlEditorDelete},
+    {SQSH_MM_BACK_FROM_CONTROL_EDITOR_BTN, onMMBackButton},
+
+    //ingame menu control editor
+    {SQSH_MM_CONTROL_EDITOR_INGAME_BTN, onMMControlEditorButton},
+    {SQSH_MM_CONTROL_EDITOR_INGAME_LIST, onMMControlEditorList},
+    {SQSH_MM_CONTROL_EDITOR_INGAME_CHANGE_BTN, onMMControlEditorChange},
+    {SQSH_MM_CONTROL_EDITOR_INGAME_RESTORE_BTN, onMMControlEditorRestore},
+    {SQSH_MM_CONTROL_EDITOR_INGAME_DELETE_BTN, onMMControlEditorDelete},
+    {SQSH_MM_BACK_FROM_CONTROL_EDITOR_INGAME_BTN, onMMBackButton},
+
 	//profile editor
 	{SQSH_MM_NEW_PROFILE_BTN, onMMNewProfileButton},
 	{SQSH_MM_DEL_PROFILE_BTN, onMMDelProfileButton},
@@ -137,7 +155,8 @@ _handlertbl[] = {
 	{SQSH_MM_START_MISSION_BTN, onMMStartMissionButton},
 	{SQSH_MM_SKIP_MISSION_BTN, onMMSkipMissionButton},
 	{SQSH_MM_SKIP_BRIEFING_BTN, onMMSkipBriefingButton},
-	{SQSH_MM_BRIEFING_YEAR_TXT, onMMYearBriefing},
+    {SQSH_MM_BRIEFING_TXT, onMMBriefingText},
+    {SQSH_MM_BRIEFING_YEAR_TXT, onMMYearBriefing},
 	
 	//end mission
 	{SQSH_MM_RESUME_BTN, onMMResumeButton},
@@ -158,7 +177,7 @@ _handlertbl[] = {
 	{SQSH_MM_INMISSION_LOAD_BTN, onMMInMissLoadButton},
 	{SQSH_MM_INMISSION_OPTIONS_BTN, onMMInMissOptionsButton},
 	{SQSH_MM_INMISSION_RESTART_BTN, onMMInMissRestartButton},
-	{SQSH_MM_INMISSION_RESUME_BTN, onMMInMissResumeButton},
+	{SQSH_MM_INMISSION_RESUME_BTN, onMMBackButton},
 	{SQSH_MM_INMISSION_QUIT_BTN, onMMInMissQuitButton},
 
 	//battle
@@ -167,7 +186,7 @@ _handlertbl[] = {
 	//credits
     {SQSH_MM_CREDITS_COMMUNITY_BTN, onMMCommunityButton},
 	{SQSH_MM_BACK_CREDITS_BTN, onMMBackButton},
-
+    
 
 	{SQSH_MM_BATTLE_PLAYER1_FRM_BTN, onMMBattleFrmButton},
 	{SQSH_MM_BATTLE_PLAYER2_FRM_BTN, onMMBattleFrmButton},
@@ -234,9 +253,13 @@ _handlertbl[] = {
 
 	{SQSH_TASK_BUTTON_ID,                    onMMTaskButton},
 
-	//join game
+    //multiplayer join
     {SQSH_MM_MULTIPLAYER_JOIN_NEXT_BTN,      onMMMultiplayerJoinNextBtn},
     {SQSH_MM_BACK_FROM_MULTIPLAYER_JOIN_BTN, onMMBackButton},
+    
+    //multiplayer passwoprd
+    {SQSH_MM_MULTIPLAYER_PASSWORD_NEXT_BTN,      onMMMultiplayerPasswordNextBtn},
+    {SQSH_MM_BACK_FROM_MULTIPLAYER_PASSWORD_BTN, onMMBackButton},
 
     //multiplayer list
 	{SQSH_MM_MULTIPLAYER_LIST_GAME_LIST,     onMMMultiplayerListGameList},
@@ -311,13 +334,13 @@ _handlertbl[] = {
 	{SQSH_MM_GRAPHICS_SHADOWS_SAMPLES_COMBO, onSamplesCombo},
 	{SQSH_MM_GRAPHICS_BUMP_COMBO, onBumpCombo},
 	{SQSH_MM_GRAPHICS_BUMP_CHAOS_COMBO, onBumpChaosCombo},
-	{SQSH_MM_GRAPHICS_COMPRESS_COMBO, onCompressCombo},
 	{SQSH_MM_BACK_FROM_CUSTOM_BTN, onMMBackButton},
 
 	//sound
 	{SQSH_MM_BACK_FROM_SOUND_BTN, onMMBackButton},
 
 	//submit dialog
+    {SQSH_MM_SUBMIT_BACKGROUND, onMMSubmitDialogBackground},
 	{SQSH_MM_SUBMIT_YES_BTN, onMMSubmitYesButton},
 	{SQSH_MM_SUBMIT_NO_BTN, onMMSubmitNoButton},
 	{SQSH_MM_SUBMIT_OK_BTN, onMMSubmitYesButton},
@@ -333,11 +356,10 @@ _handlertbl[] = {
 	{SQSH_MM_OPTIONS_GRAPHICS,OnButtonOptionGraphics},
 	{SQSH_MM_OPTIONS_SOUND,OnButtonOptionSound},
 	{SQSH_MM_GRAPHICS_GAMMA_SLIDER, OnSliderGraphicsGamma},
-	{SQSH_MM_SOUND_MUSIC_COMBO,OnComboSoundMusic},
-	{SQSH_MM_SOUND_SOUNDEFFECTS_COMBO,OnComboSoundEffects},
-	{SQSH_MM_SOUND_SOUNDEFFECTS_COMBO,OnComboSoundEffects},
 	{SQSH_MM_SOUND_SOUNDVOLUME_SLIDER,OnSliderSoundVolume},
-	{SQSH_MM_SOUND_MUSICVOLUME_SLIDER,OnSliderMusicVolume},
+    {SQSH_MM_SOUND_MUSICVOLUME_SLIDER,OnSliderMusicVolume},
+    {SQSH_MM_SOUND_VOICEVOLUME_SLIDER,OnSliderVoiceVolume},
+    {SQSH_MM_SOUND_SPEECHVOLUME_SLIDER,OnSliderSpeechVolume},
 
 	{SQSH_MM_GRAPHICS_FURROWS_COMBO,OnComboGraphicsFurrows},
 	{SQSH_MM_GAME_TOOLTIPS_COMBO,OnComboGameTooltips},
@@ -345,9 +367,10 @@ _handlertbl[] = {
     {SQSH_MM_GAME_START_SPLASH_COMBO,OnComboGameStartSplash},
     {SQSH_MM_GAME_CAMERA_MODE_COMBO,OnComboGameCameraMode},
     {SQSH_MM_GRAPHICS_UI_ANCHOR_COMBO,OnComboGraphicsUIAnchor},
+    {SQSH_MM_GRAPHICS_VSYNC_COMBO,OnComboGraphicsVSync},
     {SQSH_MM_GRAPHICS_GRAB_INPUT_COMBO,OnComboGraphicsInputGrab},
     {SQSH_MM_GRAPHICS_FOG_COMBO,OnComboGraphicsFog},
-	{SQSH_MM_GRAPHICS_COLORDEPTH_COMBO,OnComboGraphicsColorDepth},
+	//{SQSH_MM_GRAPHICS_COLORDEPTH_COMBO,OnComboGraphicsColorDepth},
 	{SQSH_MM_GRAPHICS_MODE_COMBO,OnComboGraphicsMode},
 	{SQSH_MM_GRAPHICS_SHADOWS_COMBO,OnComboGraphicsShadows},
 	{SQSH_MM_GRAPHICS_REFLECTION_COMBO,OnComboGraphicsReflection},
@@ -520,7 +543,7 @@ CShellCursorManager::CShellCursorManager()
 }
 CShellCursorManager::~CShellCursorManager()
 {
-//	Done();
+	Done();
 }
 void CShellCursorManager::Done()
 {
@@ -546,18 +569,20 @@ void CShellCursorManager::Load()
 	for (int i=0; i<_sqsh_cursor_count; i++) {
 		sqshCursor& cc = _sqsh_cursors[i];
 
+        std::string image = cc.image;
+
         _c.anifile = nullptr;
 		_c.sx = cc.sx; 
 		_c.sy = cc.sy;
 		_c.bHotspotCentered = cc.hotspot_center;
-        _c.texture = terVisGeneric->CreateTexture(cc.image);
+        _c.texture = terVisGeneric->CreateTexture(image.c_str());
 
         //Load ANI file metadata
-        if (isANIFile(cc.image)) {
+        if (get_content_entry(image) && isANIFile(image.c_str())) {
             _c.anifile = new ANIFile();
-            int err = _c.anifile->load(cc.image, false);
+            int err = _c.anifile->load(image.c_str(), false);
             if (err) {
-                fprintf(stderr, "Error %d loading ANI metadata for cursor %s\n", err, cc.image);
+                fprintf(stderr, "Error %d loading ANI metadata for cursor %s\n", err, image.c_str());
                 delete _c.anifile;
                 _c.anifile = nullptr;
             }
@@ -642,10 +667,10 @@ void CShellCursorManager::OnMouseMove(float x, float y)
 	}
 }
 
-void CShellCursorManager::DrawCursor(CShellCursor* cursor, int x, int y, float phase, float scale) {
+void CShellCursorManager::DrawCursor(const CShellCursor* cursor, int x, int y, float phase, float scale) {
     int sx = static_cast<int>(cursor->sx * scale);
     int sy = static_cast<int>(cursor->sy * scale);
-    ANIFile* ani = cursor->anifile;
+    const ANIFile* ani = cursor->anifile;
     if (ani) {
         int i = static_cast<int>(phase * 1000) / ani->tpf;
 #ifdef PERIMETER_DEBUG_ASSERT
@@ -673,30 +698,24 @@ void CShellCursorManager::draw()
 	//Draw camera icons
 	if(_shellIconManager.IsInterface())
 	{
-		if(gameShell->cameraMouseShift)
-		{
-			//курсор сдвига карты
-			Vect3f v1,e1;
-			terCamera->GetCamera()->ConvertorWorldToViewPort(&gameShell->mapMoveStartPoint(), &v1, &e1);
-
-            CShellCursor* pCursor = &m_cursors[map_move];
-
-			e1.x -= 16;
-			e1.y -= 16;
-
-            DrawCursor(pCursor, e1.x, e1.y);
-
-			return;
-		}
-		if(gameShell->cameraMouseTrack)
-		{
+        const CShellCursor* cursor = nullptr;
+        Vect2f pos;
+        if (gameShell->cameraMouseShift) {
+            cursor = &m_cursors[map_move];
+            pos = gameShell->mousePosition();
+        }
+        if (gameShell->cameraMouseTrack) {
+            cursor = &m_cursors[terCamera->tilting() ? tilt : rotate];
+            pos = gameShell->mousePressControl();
+        }
+        if (cursor) {
             DrawCursor(
-                &m_cursors[terCamera->tilting() ? tilt : rotate],
-                static_cast<int>((gameShell->mousePressControl().x + 0.5f)*terScreenSizeX) - 16,
-                static_cast<int>((gameShell->mousePressControl().y + 0.5f)*terScreenSizeY) - 16
+                    cursor,
+                    static_cast<int>(((pos.x + 0.5f)*terScreenSizeX) - cursor->sx * 0.5f),
+                    static_cast<int>(((pos.y + 0.5f)*terScreenSizeY) - cursor->sy * 0.5f)
             );
-			return;
-		}
+            return;
+        }
 	}
 
 	//Draw displacement arrows
@@ -749,8 +768,9 @@ void CShellCursorManager::draw()
             cursor = m_pCursorDefault;
         }
 
-#if 0 //Shows current hovering control 
-        if (_shellIconManager.m_pCtrlHover) {
+#ifdef PERIMETER_DEBUG
+        //Shows current hovering control 
+        if (_shellIconManager.m_pCtrlHover && debug_show_intf_borders) {
             std::string text;
             EnumWrapper<ShellControlID> eid = static_cast<ShellControlID>(_shellIconManager.m_pCtrlHover->ID); 
             text += std::string("C:") + getEnumName(eid);
@@ -861,6 +881,7 @@ CShellIconManager::CShellIconManager()
     initialMenu = SQSH_MM_START_SCR;
 
 	m_editMode = false;
+    interfaceShowFlag_ = true;
 
 	speechSound = 0;
 	resultMusicStarted = false;
@@ -904,10 +925,10 @@ void CShellIconManager::Done()
 	}
 
 	if (speechSound) {
-		SNDEnableVoices(true);
+		SNDEnableVoices(0 < terVoiceVolume);
 		speechSound->Stop();
 		delete speechSound;
-		speechSound = 0;
+		speechSound = nullptr;
 	}
 
 	cutSceneModeOn = false;
@@ -945,10 +966,10 @@ CShellIconManager::~CShellIconManager()
 
 void CShellIconManager::addChatString(const LocalizedText* newChatString) {
 	CChatInfoWindow* wnd;
-	if (cutSceneModeOn) {
-		wnd = (CChatInfoWindow*)controls[SQSH_CHAT_INFO_ID];
+    if (interfaceShowFlag()) {
+        wnd = (CChatInfoWindow*)GetWnd(SQSH_CHAT_INFO_ID);
 	} else {
-		wnd = (CChatInfoWindow*)GetWnd(SQSH_CHAT_INFO_ID);
+        wnd = (CChatInfoWindow*)controls[SQSH_CHAT_INFO_ID];
 	}
 	xassert(wnd);
 	if (wnd) {
@@ -960,10 +981,10 @@ void CShellIconManager::addChatString(const LocalizedText* newChatString) {
 
 void CShellIconManager::showHintChat(const LocalizedText* text, int showTime) {
 	CChatInfoWindow* wnd;
-	if (cutSceneModeOn) {
-		wnd = (CChatInfoWindow*)controls[SQSH_CHAT_INFO_ID];
+    if (interfaceShowFlag()) {
+        wnd = (CChatInfoWindow*)GetWnd(SQSH_CHAT_INFO_ID);
 	} else {
-		wnd = (CChatInfoWindow*)GetWnd(SQSH_CHAT_INFO_ID);
+        wnd = (CChatInfoWindow*)controls[SQSH_CHAT_INFO_ID];
 	}
 	if (wnd) {
 		wnd->AddString(text);
@@ -977,10 +998,10 @@ void CShellIconManager::showHint(const char* text, int showTime, ActionTask::Typ
 	}
 
 	CHintWindow* wnd;
-	if (cutSceneModeOn) {
-		wnd = (CHintWindow*)controls[SQSH_HINT_ID];
+    if (interfaceShowFlag()) {
+        wnd = (CHintWindow*)GetWnd(SQSH_HINT_ID);
 	} else {
-		wnd = (CHintWindow*)GetWnd(SQSH_HINT_ID);
+        wnd = (CHintWindow*)controls[SQSH_HINT_ID];
 	}
 	xassert(wnd);
 	if (wnd) {
@@ -998,6 +1019,8 @@ void CShellIconManager::showHint(const char* text, int showTime, ActionTask::Typ
 
 		std::string res = qdTextDB::instance().getText(text);
 		switch (actionType) {
+            default:
+                break;
 			case ActionTask::COMPLETED:
 				res = qdTextDB::instance().getText("Interface.Tips.Completed") + res;
 				break;
@@ -1077,10 +1100,10 @@ void CShellIconManager::fillTaskWnd() {
 	}
 
 	CTextWindow* wnd;
-	if (cutSceneModeOn) {
-		wnd = (CTextWindow*)controls[SQSH_MM_MISSION_TASK_TXT];
+	if (interfaceShowFlag()) {
+        wnd = (CTextWindow*)GetWnd(SQSH_MM_MISSION_TASK_TXT);
 	} else {
-		wnd = (CTextWindow*)GetWnd(SQSH_MM_MISSION_TASK_TXT);
+        wnd = (CTextWindow*)controls[SQSH_MM_MISSION_TASK_TXT];
 	}
 	xassert(wnd);
 	if (wnd) {
@@ -1105,10 +1128,7 @@ void CShellIconManager::save(SaveTaskList& tasksOut) const {
 
 void CShellIconManager::onSizeChanged() {
 	_pShellDispatcher->updateSmallCamera();
-
-	if (m_pDesktop) {
-		reload(m_pDesktop);
-	}
+    reloadDesktop();
 
 	//scale textures
 	_RELEASE(m_hPopupTexture);
@@ -1117,13 +1137,21 @@ void CShellIconManager::onSizeChanged() {
 	m_hTextureProgressBars = terVisGeneric->CreateTexture(progress_texture);
 }
 
+void CShellIconManager::reloadDesktop() {
+    if (m_pDesktop) {
+        reload(m_pDesktop);
+    }
+}
+
 void CShellIconManager::reload(CShellWindow* pTop) {
-	if (pTop) {
-		pTop->reload();
-		std::list<CShellWindow*>::iterator i;
-		FOR_EACH(pTop->m_children, i)
-			if (*i) reload(*i);
-	}
+	if (!pTop) return;
+
+    pTop->reload();
+    for (auto wnd : pTop->m_children) {
+        if (wnd) {
+            reload(wnd);
+        }
+    }
 }
 
 void CShellIconManager::LoadControlsGroup(int nGroup, bool force)
@@ -1214,11 +1242,7 @@ void CShellIconManager::LoadControlsGroup(int nGroup, bool force)
 //			if (gameShell->GameActive) {
 //				gameShell->pauseGame(true);
 //			}
-//#ifdef PERIMETER_DEBUG
 			((CTextWindow*) GetWnd(SQSH_MM_VERSION_TXT))->setText(currentVersion);
-//#else
-//            ((CTextWindow*) GetWnd(SQSH_MM_VERSION_TXT))->setText(currentShortVersion);
-//#endif
 		}
 		break;
 
@@ -1254,7 +1278,7 @@ void CShellIconManager::LoadTabSheets()
 		CUITabSheet* pSheet = new CUITabSheet(sheet.id, m_pDesktop, _GetEventHandler(sheet.id));
 		xassert(sheet.id <= SQSH_MAX);
 		controls[sheet.id] = pSheet;
-		pSheet->Load(&sheet);
+		pSheet->LoadSheet(&sheet);
 //		pSheet->scale(Vect2f(terScreenSizeX / 1024.0f, terScreenSizeY / 768.0f));
 		pSheet->Show(1);
 	}
@@ -1265,7 +1289,7 @@ void CShellIconManager::PostLoadTabSheets()
 	CShellWindow* pBkg = GetWnd(SQSH_BACKGRND_ID);
 	if(pBkg)
 	{
-		CShellWindow* pTab;
+		CShellWindow* pTab = nullptr;
 		std::list<CShellWindow*>::iterator i_tab;
 				
 		//buildings tab
@@ -1299,10 +1323,12 @@ void CShellIconManager::PostLoadTabSheets()
 void CShellIconManager::OpenPromtMessagesFile()
 {
 }
-char* CShellIconManager::FormatMessageText(const char* cbTag, char* cb, ...)
+
+void CShellIconManager::FormatMessageText(const char* cbTag, std::string* cb, ...)
 {
 	const int bufferSize = 2000;
 	static char cbTempBuffer[bufferSize];
+    xassert(cbTag && cb);
 
 	std::string text;
 	//ищем тэг
@@ -1315,21 +1341,16 @@ char* CShellIconManager::FormatMessageText(const char* cbTag, char* cb, ...)
         text = (cbTag + 1);
     }
 	if (text.length()) {
-		strncpy(cbTempBuffer, text.c_str(), text.length());
-		cbTempBuffer[text.length()] = '\0';
-
 		va_list va;
 		va_start(va, cb);
-		vsprintf(cb, cbTempBuffer, va);
+        vsnprintf(cbTempBuffer, bufferSize - 1, text.c_str(), va);
 		va_end(va);
-	}
-	else
-		*cb = '\0';
-
-	xassert(strlen(cb) < bufferSize);
-
-	return cb;
-}
+        cbTempBuffer[bufferSize-1] = 0;
+        *cb = cbTempBuffer;
+	} else {
+        cb->clear();
+    }
+}   
 
 void CShellIconManager::setCutSceneMode(bool on, bool animated) {
 	if (!on) {
@@ -1424,38 +1445,42 @@ void CShellIconManager::speedChanged(float speed) {
 
 float CShellIconManager::playSpeech(const char* id) {
 	std::string sound = qdTextDB::instance().getSound(id);
-	if (terSoundEnable && speechSound && !sound.empty()) {
+	if (0 < terSpeechVolume && speechSound && !sound.empty()) {
 		size_t pos = sound.find("Voice");
 		if(pos != std::string::npos)
 			sound.erase(0, pos);
 		std::string soundName = getLocDataPath() + sound;
         speechSound->requestPlay(true); //Avoid SNDEnableVoices being enabled again too soon
 		SNDEnableVoices(false);
-		speechSound->SetVolume(terSoundVolume);
+        speechSound->Stop();
+        speechSound->SetVolumeSelection(GLOBAL_VOLUME_IGNORE); //We set volume here manually
+        speechSound->SetVolume(terSpeechVolume);
 		int ret = speechSound->OpenToPlay(soundName.c_str(), false);
 		xassert(ret);
 		return speechSound->GetLen();
 	}
 	return 0;
 }
+
 void CShellIconManager::playGameOverSound(const char* path) {
-	if (terSoundEnable && speechSound) {
+	if (0 < terSoundVolume && speechSound) {
 		gb_Music.FadeVolume(0.5f, 0.0f);
         speechSound->Stop();
-		speechSound->SetVolume(terSoundVolume);
+        speechSound->SetVolumeSelection(GLOBAL_VOLUME_EFFECTS);
+        speechSound->SetVolume(1.0f); //Use global volume of effects
 		resultMusicStarted = true;
-		bool ret = speechSound->OpenToPlay(path, false);
+        bool ret = speechSound->OpenToPlay(path, false);
         if (!ret) {
             fprintf(stderr, "playGameOverSound %s error\n", path);
+            xassert(0);
         }
 	}
 }
+
 void CShellIconManager::setupAudio() {
-	if (speechSound) {
-		if (!terSoundEnable) {
-			speechSound->Stop();
-		}
-		speechSound->SetVolume(terSoundVolume);
+	if (speechSound && speechSound->IsPlay()) {
+        //Set volume, a speech might be playing while user is adjusting
+		speechSound->SetVolume(terSpeechVolume);
 	}
 }
 
@@ -1478,10 +1503,11 @@ CShellWindow* CShellIconManager::GetWnd(int id)
 //		return 0;
 
 
-	if(getDesktop() && m_pDesktop->ID == id)
-		return m_pDesktop;
-	else
-		return controls[id];
+    if (getDesktop() && m_pDesktop->ID == id) {
+        return m_pDesktop;
+    } else {
+        return controls[id];
+    }
 
 //	return FindWnd(m_pDesktop, id);
 }
@@ -1562,6 +1588,10 @@ CShellWindow* CShellIconManager::CreateWnd(int id, ShellControlType type, CShell
 	case SQSH_TEXT_STRING_WINDOW_TYPE:
 		pWnd = new CTextStringWindow(id, pParent, proc);
 		break;
+        
+    case SQSH_TEXT_SCROLLABLE_WINDOW_TYPE:
+        pWnd = new CTextScrollableWindow(id, pParent, proc);
+        break; 
 
 	case SQSH_COMPLEX_PUSH_BUTTON_TYPE:
 		pWnd = new CShellComplexPushButton(id, pParent, proc);
@@ -1679,45 +1709,55 @@ CShellWindow* CShellIconManager::CreateWnd(int id, ShellControlType type, CShell
 	return pWnd;
 }
 
-void CShellIconManager::AddDynamicHandler(DYNCALLBACK _p, int code, int delay)
+void CShellIconManager::AddDynamicHandler(DYNCALLBACK _p, DynQueueCode code, int delay)
 {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
+    xassert(0 <= code && code < NUM_CBCODE_MAX);
 
 //	fout < "AddDynamicHandler\n";
+    
+    DynQueue& dynqueue = m_dyn_queues[code];
+	MTAuto dynQueue_autolock(&dynqueue.lock);
+    dynqueue.empty = false;
 
-	for (auto& i : m_dyn_queue) {
-        if ((i.cbproc == _p) && (i.code == code)) {
-            i.bDelete = 0;
+	for (auto& i : dynqueue.items) {
+        if (i.cbproc == _p) {
+            i.bDelete = false;
             i.time_delay = delay;
             return;
         }
     }
 
-	m_dyn_queue.emplace_back(_p, code, delay);
+    dynqueue.items.emplace_back(_p, delay);
 }
-void CShellIconManager::DelDynamicHandler(DYNCALLBACK _p, int code)
+void CShellIconManager::DelDynamicHandler(DYNCALLBACK _p, DynQueueCode code)
 {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
-
+    xassert(0 <= code && code < NUM_CBCODE_MAX);
+    
 //	fout < "DelDynamicHandler\n";
 
-    for (auto& i : m_dyn_queue) {
-        if (((i.cbproc == _p) || (_p == 0)) && ((i.code == code) || (code == 0))) {
-            i.bDelete = 1;
+    DynQueue& dynqueue = m_dyn_queues[code];
+    if (dynqueue.empty) return;
+    MTAuto dynQueue_autolock(&dynqueue.lock);
+    auto& items = dynqueue.items;
+    
+    bool found = false;
+    for (auto& i : items) {
+        if (_p == nullptr || i.cbproc == _p) {
+            i.bDelete = true;
+            found = true;
             break;
         }
     }
-}
-
-bool CShellIconManager::HasDynamicHandler(DYNCALLBACK _p, int code) {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
-
-    for (auto const& i : m_dyn_queue) {
-		if (( (i.cbproc == _p) || (_p == 0) ) && ( (i.code == code) || (code == 0) )) {
-			return true;
-		}
-	}
-	return false;
+    
+    if (found) {
+        dynqueue.empty = true;
+        for (auto& item : items) {
+            if (!item.bDelete) {
+                dynqueue.empty = false;
+                break;
+            }
+        }
+    }
 }
 
 CShellWindow* CShellIconManager::HitTest(float x, float y)
@@ -1782,7 +1822,11 @@ bool CShellIconManager::isInEditMode() const
 
 void CShellIconManager::SetModalWnd(int id)
 {
-	m_pModalWnd = id ? GetWnd(id) : 0;
+	m_pModalWnd = id ? GetWnd(id) : nullptr;
+}
+
+CShellWindow* CShellIconManager::GetModalWnd() {
+    return m_pModalWnd;
 }
 
 int CShellIconManager::OnMouseMove(float x, float y)
@@ -2020,46 +2064,65 @@ void CShellIconManager::DrawControls(CShellWindow* pTop)
 		terRenderDevice->FlushPrimitive2D();		
 	}
 }
-int CShellIconManager::ProcessDynQueue(int code, float x, float y)
+
+int CShellIconManager::ProcessDynQueue(DynQueueCode code, float x, float y)
 {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
+    xassert(0 <= code && code < NUM_CBCODE_MAX);
 
 //	fout < "ProcessDynQueue " < code < "\n";
 
-	int r = 0;
+    DynQueue& dynqueue = m_dyn_queues[code];
+    MTAuto dynQueue_autolock(&dynqueue.lock);
+    auto& items = dynqueue.items;
 
-	auto i = m_dyn_queue.begin();
-	while (i != m_dyn_queue.end()) {
+    int r = 0;
+	auto i = items.begin();
+	while (i != items.end()) {
 //		fout < "	 DYN_QUEUE_ITEM=" < ((DWORD)i->cbproc) < "\n";
 		if (i->bDelete) {
 //			fout < "	 delete\n";
-			i = m_dyn_queue.erase(i);
+			i = items.erase(i);
 		} else {
-			if ((i->code == code) && (i->time_delay <= 0)) {
+			if (i->time_delay <= 0) {
+                r = 1;
 //				fout < "	 process\n";
-				if ( !(*i->cbproc)(x,y) ) {
-					i->bDelete = 1;
-					return 1;
-				}
-				r = 1;
+                xassert(i->cbproc);
+				if ( (*i->cbproc)(x,y) == 0 ) {
+					i->bDelete = true;
+                    break;
+                }
 			}
 			i++;
 		}
 	}
 
+    dynqueue.empty = true;
+    for (auto& item : items) {
+        if (!item.bDelete) {
+            dynqueue.empty = false;
+            break;
+        }
+    }
+
 	return r;
 }
 void CShellIconManager::QuantDynQueue(int dt)
 {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
-    for (auto& i : m_dyn_queue) {
-        i.time_delay -= dt;
+    for (auto& dynqueue : m_dyn_queues) {
+        MTAuto dynQueue_autolock(&dynqueue.lock);
+        for (auto& i: dynqueue.items) {
+            i.time_delay -= dt;
+        }
     }
 }
 
 bool CShellIconManager::isDynQueueEmpty() {
-	MTAuto dynQueue_autolock(&dynQueue_lock);
-	return m_dyn_queue.empty();
+    for (auto& queue : m_dyn_queues) {
+        if (!queue.empty) {
+            return false;
+        }
+    }
+	return true;
 }
 
 void CShellIconManager::quant(float dTime)
@@ -2078,7 +2141,7 @@ void CShellIconManager::quant(float dTime)
 	}
 
 	if (!SNDIsVoicesEnabled() && speechSound && !speechSound->IsPlay() && !cutSceneModeOn) {
-		SNDEnableVoices(true);
+        SNDEnableVoices(0 < terVoiceVolume);
 	}
 
     //Start music again after victory/defeat sound
@@ -2104,16 +2167,6 @@ void CShellIconManager::quant(float dTime)
 		m_nPromptMessageDelayTime -= dTime;
 		m_fPhase += dTime;
 	}
-    
-    //Set net info visibility
-    CShellWindow* wnd = GetWnd(SQSH_NET_LATENCY_INFO_ID);
-    if (wnd) {
-        bool visible = false;
-        if (gameShell->getNetClient()) {
-            visible = gameShell->getNetClient()->isGameRun();
-        }
-        wnd->Show(visible);
-    }
 
 	QuantDynQueue(dTime);
 	ProcessDynQueue(CBCODE_QUANT);
@@ -2132,7 +2185,7 @@ inline int rect_height(sRect& rc)
 	return rc.bottom - rc.top;
 }
 
-void PopupFormatAttack(const AttributeBase* attr, char* cbBuffer, bool gun) {
+void PopupFormatAttack(const AttributeBase* attr, std::string& cbBuffer, bool gun) {
 	std::string attacks;
 	std::string unitClass;
 	int count = 0;
@@ -2161,15 +2214,15 @@ void PopupFormatAttack(const AttributeBase* attr, char* cbBuffer, bool gun) {
 	}
 
 	std::string balance;
-	static char cbTemp[200];
+	static std::string cbTemp;
 	if (attr->intfBalanceData.power) {
-		_shellIconManager.FormatMessageText("<damage>", cbTemp, attr->intfBalanceData.power, attr->intfBalanceData.width );
+		_shellIconManager.FormatMessageText("<damage>", &cbTemp, attr->intfBalanceData.power, attr->intfBalanceData.width );
 		balance += "\n";
 		balance += cbTemp;
 	}
 	if (!gun) {
         int armor = xm::round(attr->intfBalanceData.armor);
-		_shellIconManager.FormatMessageText("<armor>", cbTemp, armor );
+		_shellIconManager.FormatMessageText("<armor>", &cbTemp, armor );
 		if (balance.empty()) {
 			balance += "\n";
 		}
@@ -2179,14 +2232,14 @@ void PopupFormatAttack(const AttributeBase* attr, char* cbBuffer, bool gun) {
 
 	_shellIconManager.FormatMessageText(
 		"<Attack>",
-		cbBuffer,
+        &cbBuffer,
 		balance.c_str(),
 		unitClass.c_str(),
 		attacks.c_str()
 	);
 }
 
-void PopupFormatBuilding(const AttributeBase* attr, char* cbBuffer, bool onControl, terUnitBase* unit, bool ampl, bool gun)
+void PopupFormatBuilding(const AttributeBase* attr, std::string& cbBuffer, bool onControl, terUnitBase* unit, bool ampl, bool gun)
 {
 	const UnitInterfacePrm& prm = attr->interfacePrm;
 
@@ -2196,8 +2249,8 @@ void PopupFormatBuilding(const AttributeBase* attr, char* cbBuffer, bool onContr
 	terPlayer* player = unit ? universe()->findPlayer(unit->playerID()) : universe()->activePlayer();
 	bool enemy = unit ? (unit->playerID() != universe()->activePlayer()->playerID()) : false;
 
-	static char cbTemp[200];
-	_shellIconManager.FormatMessageText("<requires>", cbTemp);
+	static std::string cbTemp;
+	_shellIconManager.FormatMessageText("<requires>", &cbTemp);
 	if (enemy) {
 		if(attr->isBuilding())
 		{
@@ -2228,10 +2281,10 @@ void PopupFormatBuilding(const AttributeBase* attr, char* cbBuffer, bool onContr
 			sRequired += "&FFFFFF";
 			if (gun) {
 				PopupFormatAttack(attr, cbTemp, true);
-				_shellIconManager.FormatMessageText(prm.popup, cbBuffer, sRequired.c_str(), "", attr->buildEnergy(), cbTemp);
+				_shellIconManager.FormatMessageText(prm.popup, &cbBuffer, sRequired.c_str(), "", attr->buildEnergy(), cbTemp.c_str());
 			} else {
 				float buildEnergy = attr->buildEnergy();
-				_shellIconManager.FormatMessageText(prm.popup, cbBuffer, sRequired.c_str(), "", buildEnergy, ampl ? attr->energyCapacity : attr->MakeEnergy);
+				_shellIconManager.FormatMessageText(prm.popup, &cbBuffer, sRequired.c_str(), "", buildEnergy, ampl ? attr->energyCapacity : attr->MakeEnergy);
 			}
 //		}
 	} else {
@@ -2273,57 +2326,59 @@ void PopupFormatBuilding(const AttributeBase* attr, char* cbBuffer, bool onContr
 			sRequired += "&FFFFFF";
 			if (gun) {
 				PopupFormatAttack(attr, cbTemp, true);
-				_shellIconManager.FormatMessageText( prm.popup,	cbBuffer, sRequired.c_str(), (noEnergy ? "&FF0000" : ""), attr->buildEnergy(), cbTemp);
+				_shellIconManager.FormatMessageText( prm.popup,	&cbBuffer, sRequired.c_str(), (noEnergy ? "&FF0000" : ""), attr->buildEnergy(), cbTemp.c_str());
 			} else {
-				_shellIconManager.FormatMessageText(prm.popup, cbBuffer, sRequired.c_str(), (noEnergy ? "&FF0000" : ""), attr->buildEnergy(), ampl ? attr->energyCapacity : attr->MakeEnergy);
+				_shellIconManager.FormatMessageText(prm.popup, &cbBuffer, sRequired.c_str(), (noEnergy ? "&FF0000" : ""), attr->buildEnergy(), ampl ? attr->energyCapacity : attr->MakeEnergy);
 			}
 //		}
 	}
 
 }
-void PopupFormatCore(const AttributeBase* attr, char* cbBuffer, terUnitBase* unit)
+void PopupFormatCore(const AttributeBase* attr, std::string& cbBuffer, terUnitBase* unit)
 {
 	_shellIconManager.FormatMessageText(
 		attr->interfacePrm.popup,
-		cbBuffer,
+		&cbBuffer,
 		"",
 		attr->buildEnergy(),
 		attr->MakeEnergy,
 		(unit && safe_cast<terProtector*>(unit)->canStartField()) ? "&00FF00" : "&FF0000");
 }
-void PopupFormatFrame(const AttributeBase* attr, char* cbBuffer, terUnitBase* unit)
+void PopupFormatFrame(const AttributeBase* attr, std::string& cbBuffer, terUnitBase* unit)
 {
 	int spiralLevel = unit ? static_cast<int>(xm::round(100 * safe_cast<terFrame*>(unit)->spiralLevel() - 0.5f)) : 0;
     spiralLevel = std::max(0, spiralLevel);
 	_shellIconManager.FormatMessageText(
 		attr->interfacePrm.popup,
-		cbBuffer,
+		&cbBuffer,
 		attr->MakeEnergy,
 		attr->energyCapacity,
 		spiralLevel);
 }
-void PopupFormatSquad(const AttributeBase* attr, char* cbBuffer, terUnitBase* unit)
+void PopupFormatSquad(const AttributeBase* attr, std::string& cbBuffer, terUnitBase* unit)
 {
-	static char cbTemp[256];
+	static std::string cbTemp;
 	PopupFormatAttack(attr, cbTemp, false);
 	_shellIconManager.FormatMessageText(
 		attr->interfacePrm.popup,
-		cbBuffer,
+		&cbBuffer,
 		attr->interfaceName(),
-		cbTemp);
+		cbTemp.c_str());
 }
-void PopupFormatMMP(const AttributeBase* attr, char* cbBuffer, terUnitBase* unit) {
+void PopupFormatMMP(const AttributeBase* attr, std::string& cbBuffer, terUnitBase* unit) {
 	_shellIconManager.FormatMessageText(
 		attr->interfacePrm.popup,
-		cbBuffer);
+		&cbBuffer);
 }
-void CShellIconManager::FormatUnitPopup(const AttributeBase* attr, char* cbBuffer, bool onControl, terUnitBase* unit)
+void CShellIconManager::FormatUnitPopup(const AttributeBase* attr, std::string& cbBuffer, bool onControl, terUnitBase* unit)
 {
 	if(strlen(attr->interfacePrm.popup) == 0)
 		return;
 
 	switch(attr->interfacePrm.format_group)
 	{
+    default:
+        break;
 	case POPUP_FORMAT_GUN:
 		PopupFormatBuilding(attr, cbBuffer, onControl, unit, false, true);
 		break;
@@ -2347,13 +2402,11 @@ void CShellIconManager::FormatUnitPopup(const AttributeBase* attr, char* cbBuffe
 		break;
 	}
 
-    if (!strlen(cbBuffer)) {
-        std::string finalPopup = attr->interfaceName();
-        finalPopup += cbBuffer;
-        strcpy(cbBuffer, finalPopup.c_str());
+    if (cbBuffer.empty()) {
+        cbBuffer = attr->interfaceName();
     }
 
-	if (strlen(cbBuffer) && unit && !unit->Player->isWorld()) {
+	if (!cbBuffer.empty() && unit && !unit->Player->isWorld()) {
 //		string finalPopup(qdTextDB::instance().getText("Player"));
 		std::string finalPopup = "[";
         finalPopup += unit->Player->name();
@@ -2388,10 +2441,8 @@ void CShellIconManager::FormatUnitPopup(const AttributeBase* attr, char* cbBuffe
 		}
 
 		finalPopup += "&FFFFFF\n\n";
-		finalPopup += cbBuffer;
-		strcpy(cbBuffer, finalPopup.c_str());
+        cbBuffer = finalPopup + cbBuffer;
 	}
-
 }
 
 void CShellIconManager::draw()
@@ -2411,9 +2462,9 @@ void CShellIconManager::draw()
 		return;
 	}
 
-	if(!mt_interface_quant)
-		return;
-
+	if (!mt_interface_quant || !interfaceShowFlag()) {
+        return;
+    }
 
 	if(getDesktop())
 	{
@@ -2430,8 +2481,21 @@ void CShellIconManager::draw()
 
 		//background
 		CShellWindow* pBackgrnd = GetWnd(SQSH_BACKGRND_ID);
-		if(pBackgrnd)
-			pBackgrnd->draw(false);
+		if (pBackgrnd) {
+            pBackgrnd->draw(false);
+        }
+
+        //Set net info visibility
+        CShellWindow* wnd = GetWnd(SQSH_NET_LATENCY_INFO_ID);
+        if (wnd) {
+            bool visible = false;
+            if (gameShell->getNetClient()) {
+                visible = gameShell->getNetClient()->isGameRun();
+            }
+            if (visible != wnd->isVisible()) {
+                wnd->Show(visible);
+            }
+        }
 
 		DrawControls(m_pDesktop);
 
@@ -2439,11 +2503,11 @@ void CShellIconManager::draw()
 		{
 			if(!_bMenuMode)
 			{
-				static char cbPopupBuffer[2000];
+				static std::string cbPopupBuffer;
 
 				if((GetWnd(SQSH_INFOWND_ID)->state & SQSH_VISIBLE) == 0)
 				{
-					*cbPopupBuffer = 0;
+					cbPopupBuffer.clear();
 
 					if(m_pCtrlHover)
 					{
@@ -2458,21 +2522,21 @@ void CShellIconManager::draw()
 //					else if(_pShellDispatcher->m_pUnitInfo)
 //						FormatUnitPopup(_pShellDispatcher->m_pUnitInfo, cbPopupBuffer, false, 0);
 
-					if(*cbPopupBuffer)
+					if(!cbPopupBuffer.empty())
 					{
 						terRenderDevice->SetFont(m_hFontPopup);
 
 						Vect2f v1, v2;
-						OutTextRect(0, 0 , cbPopupBuffer, -1, v1, v2);
+						OutTextRect(0, 0 , cbPopupBuffer.c_str(), -1, v1, v2);
 						v2.x += 2;
 
 						int pos_x = terScreenSizeX - (v2.x-v1.x) - 1;
-						int delta_y = absoluteY(nPopupTextPosY + nPopupSY) - (v2.y-v1.y);
+						int delta_y = absoluteUIPosY(nPopupTextPosY + nPopupSY, SHELL_ANCHOR_DEFAULT) - (v2.y-v1.y);
 
 						terRenderDevice->DrawSprite(pos_x - 2, delta_y, v2.x-v1.x + 2, v2.y-v1.y,
 							0, 0, 1, 1, m_hPopupTexture, sColor4c(255,255,255,255));
 
-						terRenderDevice->OutText(pos_x, delta_y, cbPopupBuffer, sColor4f(1, 1, 1, 1), -1);
+						terRenderDevice->OutText(pos_x, delta_y, cbPopupBuffer.c_str(), sColor4f(1, 1, 1, 1), -1);
 						terRenderDevice->SetFont(0);
 
 
@@ -2484,12 +2548,13 @@ void CShellIconManager::draw()
 				}
 
 				if(gameShell->showKeysHelp()){
-					FormatMessageText(gameShell->missionEditor() ? "<mission_editor_help>" : "<keys_help>", cbPopupBuffer);
-					if(gameShell->missionEditor())
-						strcat(cbPopupBuffer, gameShell->missionEditor()->info());
+					FormatMessageText(gameShell->missionEditor() ? "<mission_editor_help>" : "<keys_help>", &cbPopupBuffer);
+					if(gameShell->missionEditor()) {
+                        cbPopupBuffer += gameShell->missionEditor()->info();
+                    }
 					terRenderDevice->SetFont(m_hFontPopup);
                     sColor4f c(1, 1, 1, 1);
-					OutText(10, 30, cbPopupBuffer, &c, -1);
+					OutText(10, 30, cbPopupBuffer.c_str(), &c, -1);
 					terRenderDevice->SetFont(0);
 				}
 				else if(gameShell->missionEditor()){
@@ -2513,7 +2578,7 @@ void CShellIconManager::draw()
             //Render text
             const float separationX = 30.0f;
 			int baseUnitsX = terRenderDevice->GetSizeX() - w - separationX;
-			int baseUnitsY = absoluteY(scripts_export::gameTopEdge);
+			int baseUnitsY = absoluteUISizeY(scripts_export::gameTopEdge, SHELL_ANCHOR_RIGHT);
             sColor4f c(1, 1, 1, 1);
 			OutText(baseUnitsX, baseUnitsY, topLine.c_str(), &c, -1);
 
@@ -2528,7 +2593,13 @@ void CShellIconManager::draw()
                 if (!gameShell->getCountDownTime().empty()) {
                     terRenderDevice->SetFont(m_hFontCountDownTime);
                     sColor4f c(sqshFontCountDownTimeColor);
-                    OutText(absoluteX(countDownTimerX), absoluteY(countDownTimerY), gameShell->getCountDownTime().c_str(), &c, -1);
+                    OutText(
+                        absoluteUIPosX(countDownTimerX, SHELL_ANCHOR_RIGHT),
+                        absoluteUIPosY(countDownTimerY, SHELL_ANCHOR_RIGHT),
+                        gameShell->getCountDownTime().c_str(),
+                        &c,
+                        -1
+                    );
                 }
 
                 //Add total time
@@ -2920,7 +2991,7 @@ void CShellIconManager::UpdateIcons()
 	if(_bDebugDisplayAllIcons)
 		return;
 
-	if(!getDesktop() || _bMenuMode)
+	if (!getDesktop() || _bMenuMode || !interfaceShowFlag())
 		return;
 
 //	if(!universe()->activePlayer())
@@ -3738,7 +3809,7 @@ void CShellIconManager::UpdateSquadIcons()
 		if (	(_pShellDispatcher->GetSelectedUnitsCount() > 1) && 
 				(_pShellDispatcher->GetSelectedUnit()->attr()->ID == UNIT_ATTRIBUTE_SQUAD)
 			) {
-			terUnitBase* b = _pShellDispatcher->GetSelectedUnit();
+			//terUnitBase* b = _pShellDispatcher->GetSelectedUnit();
 
 			CUITabSheet* pSquadSheet = (CUITabSheet*)GetWnd(SQSH_TAB_SQUAD_ID);
 			int nActivePage = pSquadSheet->GetActivePage();
@@ -3749,7 +3820,7 @@ void CShellIconManager::UpdateSquadIcons()
 				const UnitList& selList=universe()->select.GetSelectList();
 				UnitList::const_iterator selIt;
 				for (selIt = selList.begin(); selIt != selList.end(); selIt++) {
-					b = *selIt;
+					//b = *selIt;
 					terUnitSquad* sq = (terUnitSquad*)(*selIt);
 					if (!sq->Empty()) {
                         if (!sq->mutationFinished()) {
@@ -3840,25 +3911,13 @@ void CShellIconManager::ClearSquadIconTable()
 }
 
 bool CtrlAction::actionPerformed() {
-	CShellWindow* wnd = _shellIconManager.GetWnd(controlID);
-	if (wnd) {
-		return wnd->actionPerformed( action.code, action.param );
-	}
+    if (_shellIconManager.IsInterface()) {
+        CShellWindow* wnd = _shellIconManager.GetWnd(controlID);
+        if (wnd) {
+            return wnd->actionPerformed(action.code, action.param);
+        }
+    }
 	return false;
-}
-
-void HotKeyManager::keyPressed(int key) {
-	float currTime = frame_time();
-	for (int i = 0, s = hotKeys.size(); i < s; i++) {
-		if ( checkHotKey(hotKeys[i], key, currTime) ) {
-			if (actions[ hotKeys[i].actionNumber ]->actionPerformed()) {
-				gameShell->updatePosition();
-				break;
-			}
-		}
-	}
-	lastKey = key;
-	lastKeyTime = currTime;
 }
 
 void LogicUpdater::updateIconsData() {

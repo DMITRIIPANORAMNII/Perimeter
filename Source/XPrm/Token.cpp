@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "StdAfxXPrm.h"
 #include "Token.h"
 #include "ParseUtil.h"
 
@@ -396,14 +396,13 @@ bool Compiler::compile(const char* input, const char* sources, bool rebuild, boo
     std::string fname = convert_path_xprm(input);
     sectionUpdated_ = false;
     try {
-        XBuffer bout(1024, 1);
+        XBuffer bout(1024, true);
         errors = parse_file(fname.c_str(), bout);
         std::cout << bout;
         if(!errors){
-            SectionList::iterator i;
-            FOR_EACH(sections, i){
-                int updated = (*i)->declaration(sources, rebuild, fail_outdated);
-                if ((*i)->definition(sources, updated || rebuild, fail_outdated, dependencies)) {
+            for (auto& i : sections) {
+                bool updated = i->declaration(sources, rebuild, fail_outdated);
+                if (i->definition(sources, updated || rebuild, fail_outdated, dependencies)) {
                     updated |= true;
                 }
                 sectionUpdated_ |= updated;
@@ -424,9 +423,9 @@ bool Compiler::compile(const char* input, const char* sources, bool rebuild, boo
 //		TokenList
 ///////////////////////////////////////////////////////////////////////////
 TokenList::TokenList(const TokenList& tokens, const char* name) 
-: Token(name ? name : tokens.name())
+: Token(name ? name : tokens.name()), std::list<ShareHandle<Token>>()
 {
-	parent = 0;
+	parent = nullptr;
 	lock_addition = 0;
 	const_iterator i;
 	FOR_EACH(tokens, i)
@@ -589,7 +588,7 @@ bool Section::definition(const char* sources, bool rebuild, bool fail_outdated, 
 		"//	XScript end: " + std::string(name()) + "\n"
 		"//////////////////////////////////////////////////////////////////////////////////////////////\n";
 
-	char* description_str = "\tdescription = ";
+	const char* description_str = "\tdescription = ";
 	std::string file;
 	std::string definition_file_path;
     if (sources) definition_file_path = std::string(sources) + PATH_SEP;

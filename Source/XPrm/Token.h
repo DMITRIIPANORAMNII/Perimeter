@@ -12,8 +12,8 @@ typedef std::list<std::string> StringList;
 class Token : public ShareHandleBase
 {
 public:
-	Token(const char* name = 0) : name_(name) { assert(name); }
-	Token(const Token& token) : name_(token.name()) {}
+	explicit Token(const char* name = nullptr) : name_(name) { assert(name); }
+	Token(const Token& token) : ShareHandleBase(), name_(token.name()) {}
 	~Token() override = default;
 	const char* name() const { return name_.c_str(); }
 	virtual Token* clone() const { return const_cast<Token*>(this); } // реально клонируются только изменяемые токены
@@ -39,7 +39,7 @@ protected:
 	int lock_addition;
 
 public:
-	TokenList(const char* name) : Token(name) { lock_addition = 0; parent = 0; }
+	explicit TokenList(const char* name) : Token(name) { lock_addition = 0; parent = 0; }
 	TokenList(const TokenList& tokens, const char* name = 0);
     ~TokenList() override;
 	const Token* find(const char* name) const;
@@ -208,10 +208,10 @@ protected:
 public:
 	DataType(const char* type_name, int size) : type_name_(type_name), size_(size) {}
 	const char* type_name() const { return type_name_.c_str(); }
-	int sizeOf() const { return size_; }
-	void description(unsigned& crc) const { crc = CRC(type_name_.c_str(), crc); }
+	int sizeOf() const override { return size_; }
+	void description(unsigned& crc) const override { crc = CRC(type_name_.c_str(), crc); }
 	virtual class Variable* create(const char* name) const = 0;
-	void affect(Compiler& comp) const;
+	void affect(Compiler& comp) const override;
 };
 
 class Variable : public DescriptedToken 
@@ -227,8 +227,8 @@ protected:
 	friend class ArrayVariable;
 	friend class PointerVariable;
 public:
-	Variable(const DataType& type_) : type(type_) { assigment_flag = 0; static_flag = 0; new_emulation_flag = 0; }
-	Variable(const Variable& var) : type(var.type) { (DescriptedToken&)*this = var; assigment_flag = 0; static_flag = var.static_flag; new_emulation_flag = var.new_emulation_flag; }
+	explicit Variable(const DataType& type_) : type(type_) { assigment_flag = 0; static_flag = 0; new_emulation_flag = 0; }
+	Variable(const Variable& var) : Token(), type(var.type) { (DescriptedToken&)*this = var; assigment_flag = 0; static_flag = var.static_flag; new_emulation_flag = var.new_emulation_flag; }
 	virtual void init(Compiler& comp){ if(assigment_flag) throw parsing_error((std::string("Redefenition of variable: ") + name()).c_str()); assigment_flag = 1; }
 	virtual void write_name(XBuffer& buf) const { if(new_emulation_flag) buf < "static "; buf < refine_name_prefix.c_str() < type.type_name() < " " < name(); }
 	virtual void write_value(WriteStream& buf) const = 0;
@@ -238,7 +238,7 @@ public:
 	int declarable() const { return !static_flag && !new_emulation_flag; }
 	int definible() const { return !static_flag; }
 	Token* clone() const override = 0;
-	void affect(Compiler& comp) const;
+	void affect(Compiler& comp) const override;
 	bool newEmulated() const { return new_emulation_flag; }
 };
 
@@ -397,8 +397,7 @@ public:
 struct StructToken : Token 
 {
 	StructToken() : Token("struct") {}
-	void affect(Compiler& comp) const
-	{
+	void affect(Compiler& comp) const override {
 		comp.context().add(new StructDataType(comp));
 		comp.skip_token(";");
 	}

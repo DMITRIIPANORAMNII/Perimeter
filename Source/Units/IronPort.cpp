@@ -80,7 +80,7 @@ void terCorridor::Quant()
 		}
 		break;
 		
-	case FRAME_DISAPPEARING: {											  
+	case FRAME_DISAPPEARING:										  
 		frame_->BodyPoint->setPose(Se3f(frame_->BodyPoint->orientation(),
 			to3D(position2D(), PositionZ_ + attr()->disappearingHeight*disappearingTimer_())));
 		frame_->realAvatar()->setSight(1 - disappearingTimer_());
@@ -97,8 +97,10 @@ void terCorridor::Quant()
             }
 			realAvatar()->requestChain(CHAIN_CLOSED);
 		}
-		break; }
-	}
+		break;
+    case IDLE:
+        break;
+    }
 }
 
 //---------------------------------------------------
@@ -341,7 +343,7 @@ void terCorridorOmega::ShowInfo()
 	terCorridor::ShowInfo();
 	
 	minedIcon_.quant();
-	if(mined()){
+	if (mined() && 0 < attr()->iconDistanceFactor) {
 		MatXf m = avatar()->matrix();
 		m.trans().z += radius()*attr()->iconDistanceFactor;
 		minedIcon_.show(m.trans());

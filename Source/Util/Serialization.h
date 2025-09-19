@@ -19,7 +19,7 @@ static uint32_t getSerializationCRC(T& t, uint32_t crc, int floatDigits = 0) {
     if (floatDigits) {
         buf.SetDigits(floatDigits);
     }
-    ar << makeObjectWrapper(t, 0, 0);
+    ar << WRAP_ELEMENT(t);
     crc = crc32(reinterpret_cast<const unsigned char*>(buf.address()), buf.tell(), crc);
     return crc;
 }
@@ -44,22 +44,32 @@ static void process_type_name(std::string& name) {
     }
 }
 
-//We use ptr to specialize the type_id when only pointer is know at compile time (like "this")
+//Uses SERIALIZATION_TYPE_CLASS_NAME method for getting type class name for class/structs
 template<class CLASS_T>
-static std::string get_type_id(const CLASS_T* ptr = nullptr) {
-    if (ptr) {}
-	std::string name = ptr->type_class_name();
+static std::string get_type_id() {
+	std::string name = CLASS_T::type_class_name();
+#if defined(PERIMETER_DEBUG) && 0
+    //Sanity check
+    const static CLASS_T a;
+    xassert(a.type_name() == name);
+#endif
     process_type_name(name);
     //printf("get_type_id %s = %s\n", typeid(CLASS_T).name(), name.c_str());
+    xassert(!name.empty());
     return name;
 }
 
-//Uses SERIALIZE_TYPE_NAME methods for getting runtime type name for class/structs
+//Uses SERIALIZATION_TYPE_NAME methods for getting runtime type name for class/structs
 template<class CLASS_T>
 static std::string get_type_id_runtime(const CLASS_T* ptr) {
+    if (!ptr) {
+        xassert(0);
+        return "";
+    }
     std::string name = ptr->type_name();
     process_type_name(name);
     //printf("get_type_id_runtime %s = %s\n", typeid(CLASS_T).name(), name.c_str());
+    xassert(!name.empty());
     return name;
 }
 
@@ -621,6 +631,10 @@ SingletonPrm<Type>
 /////////////////////////////////////////////////
 //    Заворачивание объектов для архивации
 /////////////////////////////////////////////////
+// Wraps only value without any name wrapping
+#define WRAP_ELEMENT(object) \
+	makeObjectWrapper(object, 0, 0)
+
 // Завернуть без перевода с указанием имени
 #define WRAP_NAME(object, name) \
 	makeObjectWrapper(object, name, 0)
@@ -640,9 +654,6 @@ SingletonPrm<Type>
 /////////////////////////////////////////////////
 //		Регистрация enums
 /////////////////////////////////////////////////
-template<class Enum>
-const EnumDescriptor<Enum>& getEnumDescriptor(const Enum& key);
-
 #define BEGIN_ENUM_DESCRIPTOR(enumType, enumName)	\
 	struct Enum##enumType : EnumDescriptor<enumType> { Enum##enumType(); }; \
 	Enum##enumType::Enum##enumType() : EnumDescriptor<enumType>(enumName) {
@@ -652,9 +663,9 @@ const EnumDescriptor<Enum>& getEnumDescriptor(const Enum& key);
 
 #define END_ENUM_DESCRIPTOR(enumType)	\
 	}  \
-	const EnumDescriptor<enumType>& getEnumDescriptor(const enumType& key){	\
+	const EnumDescriptor<enumType>* getEnumDescriptor(const enumType& key){	\
 		static Enum##enumType descriptor;	\
-		return descriptor;	\
+		return &descriptor;	\
 	}
 
 // Для enums, закрытых классами
@@ -667,64 +678,59 @@ const EnumDescriptor<Enum>& getEnumDescriptor(const Enum& key);
 
 #define END_ENUM_DESCRIPTOR_ENCLOSED(nameSpace, enumType)	\
 	}  \
-	const EnumDescriptor<nameSpace::enumType>& getEnumDescriptor(const nameSpace::enumType& key){	\
+	const EnumDescriptor<nameSpace::enumType>* getEnumDescriptor(const nameSpace::enumType& key){	\
 		static Enum##nameSpace##enumType descriptor;	\
-		return descriptor;	\
+		return &descriptor;	\
 	}
 
-#if !defined(_MSC_VER) || (_MSC_VER >= 1900)
 #define DECLARE_ENUM_DESCRIPTOR(enumType)	\
-	const EnumDescriptor<enumType>& getEnumDescriptor(const enumType& key);
-#endif
-
-
-#if !defined(_MSC_VER) || (_MSC_VER >= 1900)
+	const EnumDescriptor<enumType>* getEnumDescriptor(const enumType& key);
+    
 #define DECLARE_ENUM_DESCRIPTOR_ENCLOSED(nameSpace, enumType)	\
-	const EnumDescriptor<nameSpace::enumType>& getEnumDescriptor(const nameSpace::enumType& key);
-#endif
+	const EnumDescriptor<nameSpace::enumType>* getEnumDescriptor(const nameSpace::enumType& key);
 
 /////////////////////////////////////////////////
 //	Вспомогательные функции для отображения
 /////////////////////////////////////////////////
 template<class Enum>
 const char* getEnumName(const Enum& key) {
-	return getEnumDescriptor(Enum()).name(key);
+	return getEnumDescriptor(Enum())->name(key);
 }
 
 template<class Enum>
 const char* getEnumNameAlt(const Enum& key) {
-	return getEnumDescriptor(Enum()).nameAlt(key);
+	return getEnumDescriptor(Enum())->nameAlt(key);
 }
 
 template<class Enum>
 const char* getEnumName(const EnumWrapper<Enum>& key) {
-	return getEnumDescriptor(Enum()).name(key);
+	return getEnumDescriptor(Enum())->name(key);
 }
 
 template<class Enum>
 const char* getEnumNameAlt(const EnumWrapper<Enum>& key) {
-	return getEnumDescriptor(Enum()).nameAlt(key);
+	return getEnumDescriptor(Enum())->nameAlt(key);
 }
 
 template<class Enum>
-const EnumDescriptor<Enum>& getEnumDescriptor(const Enum& key);
+const EnumDescriptor<Enum>* getEnumDescriptor(const Enum& key);
 
 template<class T>
-const ComboListDescriptor<T>& getComboListDescriptor(const T& p);
+const ComboListDescriptor<T>* getComboListDescriptor(const T& p);
 
 template<class T>
 const char* getComboListDefaultValue(const T& p) {
-	return getComboListDescriptor(p).defaultValue();
+	return getComboListDescriptor(p)->defaultValue();
 }
 
 template<class T>
 const char* getComboListString(const T& p) {
-	return getComboListDescriptor(p).comboList();
+	return getComboListDescriptor(p)->comboList();
 }
 
 template<class T>
 const char* getComboListValue(const T& p) {
-	return getComboListDescriptor(p).name(p);
+	return getComboListDescriptor(p)->name(p);
 }
 
 #define BEGIN_COMBO_LIST_DESCRIPTOR(objectType, typeName)	\
@@ -736,9 +742,9 @@ const char* getComboListValue(const T& p) {
 
 #define END_COMBO_LIST_DESCRIPTOR(objectType)	\
 	}  \
-	const ComboListDescriptor<objectType>& getComboListDescriptor(const objectType& p){	\
+	const ComboListDescriptor<objectType>* getComboListDescriptor(const objectType& p) {	\
 		static ComboListDescriptor##objectType descriptor;	\
-		return descriptor;	\
+		return &descriptor;	\
 	}
 
 #endif //__ENUM_WRAPPER_H__
